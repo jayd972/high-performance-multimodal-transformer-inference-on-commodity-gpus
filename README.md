@@ -132,6 +132,80 @@ Key findings from 10 weeks of experiments on RTX 3050 Ti (4 GB VRAM):
 - **Quality retention:** All stable configurations maintain accuracy within ≤2% of baseline on ARC-Easy, BoolQ, and HellaSwag
 - **Practical recommendation:** Use FlashAttention-2 (via pre-built wheel) for maximum context length; use SDPA default as a zero-effort improvement
 
+## Archived Results & Plots (Required)
+
+Results and plots are generated locally in `results/` when you run the experiment scripts. They are excluded from the repository (see `.gitignore`). To reproduce them, run:
+
+```bash
+# Run all weeks and generate plots
+python scripts/run_all.py --plots
+
+# Or generate plots from existing results only
+python scripts/generate_plots.py
+```
+
+### Results Directory Structure
+
+| Directory | Contents |
+|-----------|----------|
+| `results/week01_planning/` | Model shortlist, VRAM budget, evaluation protocol |
+| `results/week02_environment/` | Environment validation, model load test, VRAM monitoring |
+| `results/week03_baseline/` | Baseline benchmarks (CSV/JSON), OOM threshold, correctness traces |
+| `results/week04_profiling/` | Profiler traces, bottleneck analysis, attention backend plan |
+| `results/week05_attention_opt/` | Attention backend benchmarks, correctness report |
+| `results/week06_attention_final/` | Final attention results table, stability notes, OOM thresholds |
+| `results/week07_kv_cache/` | KV-cache prototype, correctness, memory per token |
+| `results/week08_kv_experiments/` | KV tradeoff analysis, quality evaluation, final KV selection |
+| `results/week09_combined/` | Combined config stability test, incompatibility report, final runbook |
+| `results/week10_full_benchmark/` | Consolidated benchmark table, OOM thresholds, configuration guidelines |
+| `results/week11_packaging/` | Reproducibility guide, hardware specs, benchmark protocol |
+| `results/week12_report/` | Report draft v1, figures table |
+| `results/week13_polish/` | Report v2, demo checklist |
+| `results/week14_final/` | Final report (PDF/MD), project explanation, submission manifest |
+| `results/advanced_analysis/` | Memory model, prefill vs decode, bottleneck analysis |
+
+### Required Plots (14 figures, 150 DPI)
+
+All plots are saved to `results/plots/` in subdirectories by week:
+
+| Figure | Path | Description |
+|--------|------|-------------|
+| 1 | `plots/week03_baseline/baseline_latency_vs_length.png` | Baseline p50/p95 latency vs sequence length |
+| 2 | `plots/week03_baseline/baseline_vram_vs_length.png` | Baseline peak VRAM vs sequence length |
+| 3 | `plots/week06_attention/attention_latency_comparison.png` | Attention backend latency comparison |
+| 4 | `plots/week06_attention/attention_throughput_comparison.png` | Attention backend throughput comparison |
+| 5 | `plots/week06_attention/attention_vram_comparison.png` | Attention backend VRAM comparison |
+| 6 | `plots/week08_kv_cache/kv_vram_vs_latency_tradeoff.png` | KV-cache VRAM savings vs latency tradeoff |
+| 7 | `plots/week08_kv_cache/kv_memory_per_token.png` | KV-cache memory growth per token |
+| 8 | `plots/week08_quality/quality_accuracy.png` | 0-shot quality evaluation accuracy |
+| 9 | `plots/week10_final/final_latency_throughput.png` | All configs — p95 latency & throughput |
+| 10 | `plots/week10_final/final_vram_scaling.png` | All configs — VRAM scaling |
+| 11 | `plots/week10_final/oom_threshold_comparison.png` | OOM threshold comparison (horizontal bar) |
+| 12 | `plots/week10_final/vram_scaling_comparison.png` | VRAM scaling — OOM threshold test |
+| 13 | `plots/week10_final/kv_memory_per_token.png` | KV-cache memory per token by precision |
+| 14 | `plots/week10_final/benchmark_accuracy.png` | Benchmark accuracy by task |
+
+### Key Data Files (for report tables)
+
+| File | Description |
+|------|-------------|
+| `results/week10_full_benchmark/final_benchmark_table.json` | Full performance matrix (latency, throughput, VRAM) |
+| `results/week10_full_benchmark/oom_thresholds.json` | Maximum context length before OOM per config |
+| `results/week10_full_benchmark/configuration_guidelines.json` | Recommended configurations by use case |
+| `results/week08_kv_experiments/kv_tradeoff_analysis.json` | KV-cache VRAM/latency tradeoff data |
+| `results/week08_kv_experiments/baseline_quality.json` | 0-shot benchmark accuracy results |
+| `results/week07_kv_cache/kv_memory_per_token.json` | Per-token VRAM by KV precision |
+| `results/week09_combined/incompatibility_report.json` | Combined config failure details |
+
+### Final Deliverables (Week 14)
+
+| File | Description |
+|------|-------------|
+| `results/week14_final/report_final.md` | Final academic report |
+| `results/week14_final/report_final.pdf` | PDF version of report |
+| `results/week14_final/project_explanation.pdf` | Project explanation document |
+| `results/Weekly_Progress_Final.pptx` | 9-slide presentation |
+
 ## Hardware Target
 
 - **GPU:** NVIDIA RTX 3050 Ti Laptop (4 GB VRAM)
