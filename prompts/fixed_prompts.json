@@ -1,0 +1,86 @@
+{
+  "description": "Fixed prompt set for benchmarking. Prompts are truncated/padded to exact token lengths by the benchmark harness.",
+  "single_turn": [
+    {
+      "id": "st_01",
+      "text": "Explain the concept of transformer attention mechanisms in deep learning, including how queries, keys, and values are computed and how the attention scores are used to weight the value vectors.",
+      "category": "technical_explanation"
+    },
+    {
+      "id": "st_02",
+      "text": "Write a detailed comparison of supervised learning and reinforcement learning, covering their key differences in terms of data requirements, training procedures, and typical applications.",
+      "category": "technical_comparison"
+    },
+    {
+      "id": "st_03",
+      "text": "Describe the process of photosynthesis in plants, from the absorption of light energy to the production of glucose, including the light-dependent and light-independent reactions.",
+      "category": "science_explanation"
+    },
+    {
+      "id": "st_04",
+      "text": "Summarize the key events and consequences of the Industrial Revolution in Europe, focusing on technological innovations, social changes, and economic transformations that occurred between 1760 and 1840.",
+      "category": "history"
+    },
+    {
+      "id": "st_05",
+      "text": "Explain how a compiler translates high-level programming language code into machine code, covering the main phases including lexical analysis, parsing, semantic analysis, optimization, and code generation.",
+      "category": "computer_science"
+    },
+    {
+      "id": "st_06",
+      "text": "Discuss the ethical implications of artificial intelligence in healthcare, including issues related to patient privacy, algorithmic bias, accountability for medical decisions, and the balance between automation and human oversight.",
+      "category": "ethics"
+    },
+    {
+      "id": "st_07",
+      "text": "Write a Python function that implements binary search on a sorted list and explain its time complexity, including best case, worst case, and average case analysis with Big-O notation.",
+      "category": "coding"
+    },
+    {
+      "id": "st_08",
+      "text": "Explain the differences between TCP and UDP protocols in computer networking, including their connection models, reliability guarantees, header structures, and appropriate use cases for each protocol.",
+      "category": "networking"
+    },
+    {
+      "id": "st_09",
+      "text": "Describe the structure and function of DNA, including the double helix model, base pairing rules, the role of DNA in storing genetic information, and the process of DNA replication during cell division.",
+      "category": "biology"
+    },
+    {
+      "id": "st_10",
+      "text": "Explain the principles of supply and demand in economics, including how equilibrium price is determined, what causes shifts in supply and demand curves, and real-world examples of these principles in action.",
+      "category": "economics"
+    }
+  ],
+  "multi_turn": [
+    {
+      "id": "mt_01",
+      "turns": [
+        {"role": "user", "content": "What is gradient descent in machine learning?"},
+        {"role": "assistant", "content": "Gradient descent is an optimization algorithm used to minimize a loss function by iteratively adjusting model parameters in the direction of steepest descent. It computes the gradient of the loss with respect to each parameter and updates them using a learning rate."},
+        {"role": "user", "content": "What are the main variants of gradient descent and when should each be used?"}
+      ]
+    },
+    {
+      "id": "mt_02",
+      "turns": [
+        {"role": "user", "content": "Explain what a hash table is and how it works."},
+        {"role": "assistant", "content": "A hash table is a data structure that maps keys to values using a hash function. The hash function converts each key into an array index where the corresponding value is stored, enabling average O(1) lookup, insertion, and deletion."},
+        {"role": "user", "content": "How are hash collisions handled, and what are the tradeoffs between different collision resolution strategies?"}
+      ]
+    },
+    {
+      "id": "mt_03",
+      "turns": [
+        {"role": "user", "content": "What is the difference between a process and a thread in operating systems?"},
+        {"role": "assistant", "content": "A process is an independent program in execution with its own memory space, while a thread is a lightweight unit of execution within a process that shares the process's memory. Multiple threads can run concurrently within a single process."},
+        {"role": "user", "content": "Explain the challenges of multi-threaded programming, including race conditions, deadlocks, and synchronization mechanisms."}
+      ]
+    }
+  ],
+  "long_context_seed": {
+    "id": "lc_01",
+    "text": "The following is a comprehensive technical analysis of modern large language model architectures, their training methodologies, and deployment considerations. Large language models (LLMs) have transformed natural language processing by demonstrating remarkable capabilities across a wide range of tasks. These models are built on the transformer architecture, which uses self-attention mechanisms to process sequences of tokens in parallel rather than sequentially. The key innovation of transformers is the multi-head attention mechanism, which allows the model to attend to different parts of the input simultaneously. Each attention head computes a weighted sum of value vectors, where the weights are determined by the compatibility between query and key vectors. The computational cost of standard attention scales quadratically with sequence length, which has motivated extensive research into efficient attention variants. Flash attention, for example, reduces memory usage by tiling the computation and avoiding materialization of the full attention matrix. Memory-efficient attention implementations use chunked processing to trade compute for memory. The key-value cache is another critical component for efficient autoregressive generation, as it stores previously computed key and value projections to avoid redundant computation during token-by-token generation. However, the KV cache grows linearly with sequence length and can consume significant GPU memory, particularly for long context windows. Quantization techniques can reduce the memory footprint of both model weights and the KV cache. Weight quantization to 4-bit precision using methods like GPTQ or bitsandbytes NF4 can reduce model size by approximately 4x with minimal quality degradation. KV cache quantization is a more recent development that applies similar compression to the cached key-value pairs during inference. The effectiveness of these optimizations depends heavily on the target hardware, particularly GPU memory capacity, memory bandwidth, and compute throughput. Consumer-grade GPUs with limited VRAM present unique challenges for deploying these models, requiring careful orchestration of quantization, attention optimization, and memory management strategies.",
+    "notes": "This seed text is repeated and extended to create longer context benchmarks (512, 1024+ tokens)."
+  }
+}
