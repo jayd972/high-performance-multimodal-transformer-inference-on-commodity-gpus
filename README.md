@@ -1,4 +1,4 @@
-# Efficient Transformer Inference on Commodity GPUs: A Memory-Constrained Systems Study
+# Efficient Transformer Inference on Commodity GPUs (3050Ti)
 
 **Authors:** Jay Darji (018180851) & Karma Patel (018223517)
 **University:** San Jose State University, Spring 2026
@@ -233,13 +233,6 @@ All plots are saved to `results/plots/` in subdirectories by week:
 - **Correctness:** Top-1 token agreement rate, max logit difference
 - **Quality:** 0-shot accuracy on ARC-Easy, BoolQ, HellaSwag (200 examples each)
 
-## Success Criteria
-
-At least one of:
-- 20% reduction in p95 latency at a fixed context length
-- 1.5x increase in maximum context length before OOM
-
-While keeping quality retention within ≤2% accuracy drop.
 
 ## Troubleshooting
 
