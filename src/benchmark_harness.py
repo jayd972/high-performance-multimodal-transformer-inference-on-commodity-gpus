@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import BENCHMARK_CFG
 from src.vram_monitor import VRAMMonitor, reset_peak_memory, get_peak_memory_mb
 from src.utils import Timer, set_seed
 
@@ -86,7 +87,7 @@ def run_single_inference(
     model,
     tokenizer,
     prompt: str,
-    max_new_tokens: int = 128,
+    max_new_tokens: int = BENCHMARK_CFG.output_limit,
     do_sample: bool = False,
     temperature: float = 0.0,
     monitor: Optional[VRAMMonitor] = None,
@@ -165,7 +166,7 @@ def run_batch_inference(
     model,
     tokenizer,
     prompts: List[str],
-    max_new_tokens: int = 128,
+    max_new_tokens: int = BENCHMARK_CFG.output_limit,
     do_sample: bool = False,
     temperature: float = 0.0,
 ) -> InferenceResult:
@@ -232,11 +233,11 @@ def run_benchmark_sweep(
     base_prompt: str,
     config_id: str = "baseline",
     prompt_lengths: List[int] = None,
-    output_limit: int = 128,
+    output_limit: int = BENCHMARK_CFG.output_limit,
     batch_sizes: List[int] = None,
-    num_warmup: int = 3,
-    num_runs: int = 10,
-    seed: int = 42,
+    num_warmup: int = BENCHMARK_CFG.num_warmup_runs,
+    num_runs: int = BENCHMARK_CFG.num_benchmark_runs,
+    seed: int = BENCHMARK_CFG.seed,
 ) -> List[BenchmarkResult]:
     """
     Run a full benchmark sweep across prompt lengths and batch sizes.
@@ -246,7 +247,7 @@ def run_benchmark_sweep(
     if prompt_lengths is None:
         prompt_lengths = [128, 512, 1024]
     if batch_sizes is None:
-        batch_sizes = [1, 4]
+        batch_sizes = list(BENCHMARK_CFG.batch_sizes)
 
     set_seed(seed)
     results = []
@@ -346,13 +347,13 @@ def find_oom_threshold(
     model,
     tokenizer,
     base_prompt: str,
-    max_new_tokens: int = 128,
+    max_new_tokens: int = BENCHMARK_CFG.output_limit,
     start_length: int = 128,
     max_length: int = 8192,
     step: int = 128,
 ) -> Dict[str, Any]:
     """
-    Binary-search for the maximum context length before OOM.
+    Linear scan for the maximum context length before OOM.
     
     Returns the threshold and measurements at each step.
     """

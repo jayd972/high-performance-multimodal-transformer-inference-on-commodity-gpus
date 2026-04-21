@@ -37,7 +37,7 @@ ORANGE     = RGBColor(0xE6, 0x7E, 0x22)
 ROW_DARK   = RGBColor(0x15, 0x25, 0x3D)
 ROW_LIGHT  = RGBColor(0x1A, 0x2E, 0x4A)
 
-FOOTER_TEXT = "High-Performance Multimodal Transformer Inference on Commodity GPUs  |  Darji & Patel  |  March 2026"
+FOOTER_TEXT = "Efficient Transformer Inference on Commodity GPUs  |  Darji & Patel  |  March 2026"
 
 
 def set_bg(slide, color):
@@ -138,7 +138,7 @@ blank = prs.slide_layouts[6]
 # ── Slide 1: Title ──
 s = prs.slides.add_slide(blank)
 set_bg(s, TITLE_BG)
-add_textbox(s, "High-Performance Multimodal\nTransformer Inference\non Commodity GPUs",
+add_textbox(s, "Efficient Transformer\nInference on\nCommodity GPUs",
             Inches(0.8), Inches(1.5), Inches(8.4), Inches(2.5),
             font_size=36, bold=True, color=WHITE, align=PP_ALIGN.CENTER)
 add_textbox(s, "Jay Darji  &  Karma Patel",

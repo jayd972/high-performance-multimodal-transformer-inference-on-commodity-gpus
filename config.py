@@ -1,5 +1,5 @@
 """
-Central configuration for High-Performance Multimodal Transformer Inference
+Central configuration for Efficient Transformer Inference
 on Commodity GPUs project.
 
 All benchmark settings, model candidates, VRAM budgets, and evaluation
@@ -27,32 +27,62 @@ MODEL_CANDIDATES: Dict[str, dict] = {
         "hf_id": "Qwen/Qwen2.5-3B-Instruct",
         "params_b": 3.0,
         "est_4bit_gb": 1.8,
-        "notes": "Strong chat model, well-tested with bitsandbytes 4-bit.",
+        "attention": "GQA",
+        "num_attention_heads": 16,
+        "num_kv_heads": 2,
+        "notes": "Strong chat model, GQA (16Q/2KV) — combined attn+KV quant unstable.",
     },
     "phi-2": {
         "hf_id": "microsoft/phi-2",
         "params_b": 2.7,
         "est_4bit_gb": 1.5,
-        "notes": "Good reasoning, MIT license, base model (no chat template).",
+        "attention": "MHA",
+        "num_attention_heads": 32,
+        "num_kv_heads": 32,
+        "notes": "MHA (32Q/32KV), MIT license. FlashAttention-2 + KV quant should compose.",
+    },
+    "tinyllama-1.1b": {
+        "hf_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        "params_b": 1.1,
+        "est_4bit_gb": 0.7,
+        "attention": "MHA",
+        "num_attention_heads": 32,
+        "num_kv_heads": 32,
+        "notes": "MHA (Llama-2 arch), tiny footprint, ideal for combined config validation.",
     },
     "gemma-2-2b": {
         "hf_id": "google/gemma-2-2b-it",
         "params_b": 2.0,
         "est_4bit_gb": 1.2,
-        "notes": "Compact, instruction-tuned, good quality for size.",
+        "attention": "GQA",
+        "num_attention_heads": 8,
+        "num_kv_heads": 4,
+        "notes": "Compact, instruction-tuned, GQA (8Q/4KV).",
+    },
+    "llama2-7b": {
+        "hf_id": "NousResearch/Llama-2-7b-chat-hf",
+        "params_b": 6.7,
+        "est_4bit_gb": 3.5,
+        "attention": "MHA",
+        "num_attention_heads": 32,
+        "num_kv_heads": 32,
+        "notes": "MHA (32Q/32KV), 7B stress test — weights nearly fill 4 GB VRAM. Ungated mirror.",
     },
 }
 
-# Primary model selection
+# Primary model (original study)
 DEFAULT_MODEL_KEY = "qwen2.5-3b"
 DEFAULT_MODEL_ID = MODEL_CANDIDATES[DEFAULT_MODEL_KEY]["hf_id"]
+
+# New models for combined attention + KV-cache experiments (MHA, no GQA)
+COMBINED_EXPERIMENT_MODELS = ["phi-2", "tinyllama-1.1b", "llama2-7b"]
 
 # ──────────────────────────────────────────────────────────────────────
 # VRAM budget
 # ──────────────────────────────────────────────────────────────────────
 VRAM_TOTAL_GB = 4.0
-VRAM_WEIGHT_BUDGET_GB = 3.2   # Max weight footprint
-VRAM_HEADROOM_GB = VRAM_TOTAL_GB - VRAM_WEIGHT_BUDGET_GB  # ~0.8 GB
+VRAM_WEIGHT_BUDGET_GB = 3.8   # Max weight footprint (raised for 7B models)
+VRAM_HEADROOM_GB = VRAM_TOTAL_GB - VRAM_WEIGHT_BUDGET_GB  # ~0.2 GB
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -104,8 +134,8 @@ class QualityEvalConfig:
 # ──────────────────────────────────────────────────────────────────────
 WORKLOAD_TYPES = [
     "single_turn",          # Single prompt → generation
-    "multi_turn_short",     # 3-turn conversational exchange
-    "long_context_stress",  # Maximum context length stress test
+    "multi_turn",           # 3-turn conversational exchange
+    "long_context",         # Maximum context length stress test
 ]
 
 # ──────────────────────────────────────────────────────────────────────
@@ -127,13 +157,16 @@ KV_CACHE_QUANT_TYPES = ["fp16", "int4", "int2"]
 # Configuration IDs for final benchmark matrix
 # ──────────────────────────────────────────────────────────────────────
 CONFIGURATION_IDS = {
-    "baseline":          "FP16 KV-cache, eager attention",
-    "sdpa_flash":        "FP16 KV-cache, SDPA flash attention",
-    "sdpa_mem_eff":      "FP16 KV-cache, SDPA memory-efficient attention",
-    "kv_int4":           "INT4 KV-cache, eager attention",
-    "kv_int2":           "INT2 KV-cache, eager attention",
-    "combined_flash_i4": "INT4 KV-cache, SDPA flash attention",
-    "combined_memeff_i4":"INT4 KV-cache, SDPA memory-efficient attention",
+    "baseline":             "FP16 KV-cache, eager attention",
+    "sdpa_default":         "FP16 KV-cache, SDPA (auto backend)",
+    "sdpa_flash":           "FP16 KV-cache, SDPA flash attention",
+    "sdpa_mem_eff":         "FP16 KV-cache, SDPA memory-efficient attention",
+    "kv_int4":              "INT4 KV-cache, eager attention",
+    "kv_int2":              "INT2 KV-cache, eager attention",
+    "combined_sdpa_i4":     "INT4 KV-cache, SDPA (auto backend)",
+    "combined_sdpa_i2":     "INT2 KV-cache, SDPA (auto backend)",
+    "combined_flash_i4":    "INT4 KV-cache, flash_attention_2",
+    "combined_flash_i2":    "INT2 KV-cache, flash_attention_2",
 }
 
 # ──────────────────────────────────────────────────────────────────────

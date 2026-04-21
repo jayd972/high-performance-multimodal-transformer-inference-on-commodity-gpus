@@ -3,7 +3,9 @@ KV-cache quantization experiments.
 
 Evaluates the memory savings and quality impact of quantizing
 the key-value cache during autoregressive generation.
-Supports INT8 and INT4 KV-cache quantization where available.
+Supports INT4 and INT2 KV-cache quantization via optimum-quanto.
+
+Note: quanto only supports 2-bit and 4-bit; INT8 is NOT available.
 """
 
 import os
@@ -17,6 +19,7 @@ import torch
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import BENCHMARK_CFG, KV_CACHE_QUANT_TYPES
 from src.vram_monitor import VRAMMonitor, reset_peak_memory, get_peak_memory_mb
 from src.utils import Timer
 
@@ -98,12 +101,15 @@ def run_inference_with_kv_quant(
     model,
     tokenizer,
     prompt: str,
-    kv_quant_type: str = "int8",
-    max_new_tokens: int = 128,
+    kv_quant_type: str = "int4",
+    max_new_tokens: int = BENCHMARK_CFG.output_limit,
     do_sample: bool = False,
 ) -> Dict[str, Any]:
     """
     Run inference with quantized KV-cache and measure memory.
+    
+    Args:
+        kv_quant_type: "int4" or "int2" (quanto does NOT support int8).
     
     Returns performance metrics and the generated text.
     """
@@ -183,7 +189,7 @@ def measure_kv_memory_per_token(
     KV-cache memory per token.
     
     Args:
-        kv_quant_type: "fp16" (no quant), "int8", or "int4".
+        kv_quant_type: "fp16" (no quant), "int4", or "int2".
     
     Returns:
         Dict with per-token memory estimate and measurements.
@@ -261,18 +267,19 @@ def compare_kv_quant_configs(
     tokenizer,
     prompt: str,
     quant_types: List[str] = None,
-    max_new_tokens: int = 128,
+    max_new_tokens: int = BENCHMARK_CFG.output_limit,
     num_runs: int = 5,
 ) -> Dict[str, Dict]:
     """
-    Compare FP16, INT8, and INT4 KV-cache configurations.
+    Compare FP16, INT4, and INT2 KV-cache configurations.
     
     Returns a dict mapping quant_type to aggregated metrics.
+    Note: quanto only supports int2/int4. INT8 is NOT available.
     """
     from src.benchmark_harness import run_single_inference
 
     if quant_types is None:
-        quant_types = ["fp16", "int8", "int4"]
+        quant_types = list(KV_CACHE_QUANT_TYPES)  # ["fp16", "int4", "int2"]
 
     results = {}
 

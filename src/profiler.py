@@ -51,6 +51,7 @@ def profile_inference(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
+                pad_token_id=tokenizer.pad_token_id,
             )
 
     if torch.cuda.is_available():
@@ -75,6 +76,7 @@ def profile_inference(
                     **inputs,
                     max_new_tokens=max_new_tokens,
                     do_sample=False,
+                    pad_token_id=tokenizer.pad_token_id,
                 )
 
     # Parse results

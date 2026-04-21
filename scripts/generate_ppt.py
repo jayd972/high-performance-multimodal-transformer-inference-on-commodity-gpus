@@ -129,7 +129,7 @@ prs.slide_width = Inches(10)
 prs.slide_height = Inches(7.5)
 blank = prs.slide_layouts[6]  # blank layout
 
-FOOTER = "High-Performance Multimodal Transformer Inference on Commodity GPUs  |  Jay Darji & Karma Patel"
+FOOTER = "Efficient Transformer Inference on Commodity GPUs  |  Jay Darji & Karma Patel"
 
 # ──────────────────────────────────────────────────────────────
 # SLIDE 1 — Achievements

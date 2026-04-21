@@ -1,7 +1,7 @@
 """
 Quality evaluation on lightweight benchmarks.
 
-Runs 0-shot evaluation on ARC-Easy, PIQA, and HellaSwag using
+Runs 0-shot evaluation on ARC-Easy, BoolQ, and HellaSwag using
 log-likelihood scoring. Reports accuracy and quality retention
 relative to baseline.
 """
@@ -17,6 +17,7 @@ import torch
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import QUALITY_CFG
 
 logger = logging.getLogger("llm_inference.quality")
 
@@ -29,7 +30,7 @@ def load_eval_dataset(
     """
     Load evaluation examples from HuggingFace datasets.
     
-    Supports: ai2_arc (ARC-Easy), piqa, Rowan/hellaswag.
+    Supports: ai2_arc (ARC-Easy), google/boolq (BoolQ), Rowan/hellaswag.
     Returns a list of dicts with 'question', 'choices', 'answer_idx'.
     """
     from datasets import load_dataset
@@ -230,7 +231,7 @@ def run_quality_evaluation(
     Run full quality evaluation across all configured datasets.
     """
     if dataset_names is None:
-        dataset_names = ["ai2_arc", "piqa", "Rowan/hellaswag"]
+        dataset_names = list(QUALITY_CFG.datasets)
 
     results = {
         "config_id": config_id,

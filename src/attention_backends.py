@@ -17,6 +17,7 @@ from contextlib import contextmanager
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import BENCHMARK_CFG
 
 logger = logging.getLogger("llm_inference.attention")
 
@@ -184,7 +185,7 @@ def benchmark_attention_backends(
     tokenizer,
     prompt: str,
     backends_to_test: Optional[List[str]] = None,
-    max_new_tokens: int = 128,
+    max_new_tokens: int = BENCHMARK_CFG.output_limit,
     num_runs: int = 5,
 ) -> Dict[str, Dict[str, Any]]:
     """
@@ -268,7 +269,7 @@ def benchmark_eager_baseline(
     model,
     tokenizer,
     prompt: str,
-    max_new_tokens: int = 128,
+    max_new_tokens: int = BENCHMARK_CFG.output_limit,
     num_runs: int = 5,
 ) -> Dict[str, Any]:
     """

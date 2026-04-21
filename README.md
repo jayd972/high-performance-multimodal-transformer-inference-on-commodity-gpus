@@ -30,13 +30,15 @@ LLMInference/
 │   ├── vram_monitor.py             # GPU/CPU memory monitoring
 │   └── utils.py                    # Logging, I/O, timing utilities
 │
-├── scripts/                        # Weekly experiment scripts
-│   ├── run_all.py                  # Master runner (all weeks)
+├── scripts/                        # Weekly experiment & utility scripts
+│   ├── run_all.py                  # Master runner (weeks 1–10)
 │   ├── week01_planning.py          # Planning & scope definition
 │   ├── week02_setup_validation.py  # Environment setup & validation
 │   ├── week03_baseline.py          # Baseline measurement harness
+│   ├── week03_finish.py            # Baseline finalization
 │   ├── week04_profiling.py         # Profiling & bottleneck analysis
 │   ├── week05_attention_opt.py     # Attention optimization integration
+│   ├── week05_eager_baseline_comparison.py  # Eager vs SDPA comparison
 │   ├── week06_attention_final.py   # Attention stabilization & final results
 │   ├── week07_kv_cache.py          # KV-cache quantization prototype
 │   ├── week08_kv_experiments.py    # KV-cache experiments & quality eval
@@ -44,6 +46,14 @@ LLMInference/
 │   ├── week10_full_benchmark.py    # Full benchmark suite
 │   ├── generate_plots.py           # Publication-quality plot generation
 │   ├── generate_presentation.py    # PowerPoint slide generation
+│   ├── generate_ppt.py             # Alternate presentation generator
+│   ├── generate_week05_ppt.py      # Week 5 slide generation
+│   ├── generate_week06_ppt.py      # Week 6 slide generation
+│   ├── generate_week07_ppt.py      # Week 7 slide generation
+│   ├── generate_week08_ppt.py      # Week 8 slide generation
+│   ├── advanced_analysis.py        # Advanced analysis & memory modeling
+│   ├── convert_report_to_pdf.py    # Report PDF conversion
+│   ├── convert_explanation_to_pdf.py  # Explanation PDF conversion
 │   └── demo_inference.py           # Interactive demo (4 configs)
 │
 ├── prompts/                        # Fixed prompt sets

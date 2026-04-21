@@ -27,6 +27,8 @@ SCRIPTS = {
     9: ("week09_combined", "Combined Configuration"),
     10: ("week10_full_benchmark", "Full Benchmark Suite"),
 }
+# Weeks 11–14 are documentation/report phases (no runnable scripts).
+# Results are in results/week11_packaging/ through results/week14_final/.
 
 
 def run_week(week_num: int) -> bool:

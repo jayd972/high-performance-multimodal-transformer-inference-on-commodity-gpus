@@ -16,6 +16,7 @@ import torch
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import CORRECTNESS_CFG
 from src.utils import set_seed
 
 logger = logging.getLogger("llm_inference.correctness")
@@ -25,7 +26,7 @@ def collect_logits_trace(
     model,
     tokenizer,
     prompt: str,
-    num_steps: int = 50,
+    num_steps: int = CORRECTNESS_CFG.num_logit_comparison_steps,
     seed: int = 42,
 ) -> Dict[str, Any]:
     """
@@ -168,7 +169,7 @@ def run_correctness_suite(
     tokenizer,
     prompts: List[str],
     baseline_traces: Optional[List[Dict]] = None,
-    num_steps: int = 50,
+    num_steps: int = CORRECTNESS_CFG.num_logit_comparison_steps,
     config_id: str = "test",
     seed: int = 42,
 ) -> Dict[str, Any]:
