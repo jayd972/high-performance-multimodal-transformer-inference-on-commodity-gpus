@@ -17,15 +17,15 @@
 
 \begin{document}
 
-\title{Efficient Transformer Inference on Commodity Hardware: Optimizing Attention and KV-Cache Under 4\,GB VRAM Constraints}
+\title{Optimizing Transformer Inference on the RTX 3050 Ti Under 4 GB VRAM Constraints Using FlashAttention 2 and KV Cache Quantization}
 
 \author{\IEEEauthorblockN{Jay Darji}
-\IEEEauthorblockA{\textit{Department of Computer Engineering} \\
+\IEEEauthorblockA{\textit{Department of Electrical Engineering} \\
 \textit{San Jose State University}\\
 San Jose, CA, USA}
 \and
 \IEEEauthorblockN{Karma Patel}
-\IEEEauthorblockA{\textit{Department of Computer Engineering} \\
+\IEEEauthorblockA{\textit{Department of Electrical Engineering} \\
 \textit{San Jose State University}\\
 San Jose, CA, USA}
 }
@@ -34,7 +34,7 @@ San Jose, CA, USA}
 
 % ============================================================
 \begin{abstract}
-The increasing capability of Large Language Models (LLMs) is accompanied by prohibitive memory demands that preclude deployment on commodity hardware. This paper presents a systematic empirical study evaluating the compound effectiveness of three memory-centric optimizations---4-bit NormalFloat (NF4) weight quantization, optimized attention kernels (SDPA and FlashAttention-2), and sub-byte Key-Value cache quantization (INT4/INT2)---on an NVIDIA GeForce RTX~3050~Ti laptop GPU with a strict 4\,GB VRAM ceiling. Using Qwen2.5-3B-Instruct as the primary benchmark model, we demonstrate that FlashAttention-2 extends the maximum context window from 6{,}784 to 8{,}064 tokens (+18.9\%) before Out-Of-Memory (OOM) failure, while reducing p95 latency by 2.2\% at 1{,}024-token contexts. INT4 KV-cache quantization reduces the per-token memory footprint from 0.183\,MB to 0.159\,MB (a 13.2\% compression), though it introduces 18--20\% latency overhead. The combined configuration (FA2~+ INT4~KV) achieves the highest context ceiling of 8{,}064 tokens while keeping peak VRAM below 2{,}100\,MB. Zero-shot evaluations on ARC-Easy, BoolQ, and HellaSwag confirm that these aggressive compression techniques preserve model reasoning with accuracies of 62.5\%, 58.0\%, and 69.0\%, respectively. Our results provide actionable guidelines for deploying foundation models on VRAM-constrained edge devices.
+The increasing capability of Large Language Models (LLMs) is accompanied by prohibitive memory demands that preclude deployment on commodity hardware. This paper presents a systematic empirical study evaluating the compound effectiveness of three memory-centric optimizations---4-bit NormalFloat (NF4) weight quantization, optimized attention kernels (SDPA and FlashAttention-2), and sub-byte Key-Value cache quantization (INT4/INT2)---on an NVIDIA GeForce RTX~3050~Ti laptop GPU with a strict 4\,GB VRAM ceiling. Using Qwen2.5-3B-Instruct as the primary benchmark model, we demonstrate that FlashAttention-2 extends the maximum context window from 6{,}784 to 8{,}064 tokens (+18.9\%) before Out-Of-Memory (OOM) failure, while reducing p95 latency by 2.2\% at 1{,}024-token contexts. INT4 KV-cache quantization reduces the per-token memory footprint from 0.183\,MB to 0.159\,MB (a 13.2\% compression), though it introduces 8--19\% latency overhead depending on context length. The combined configuration (FA2~+ INT4~KV) achieves the highest context ceiling of 8{,}064 tokens while keeping peak VRAM below 2{,}100\,MB. Zero-shot evaluations on ARC-Easy, BoolQ, and HellaSwag confirm that these aggressive compression techniques preserve model reasoning with accuracies of 62.5\%, 58.0\%, and 69.0\%, respectively. Our results provide actionable guidelines for deploying foundation models on VRAM-constrained edge devices.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -45,7 +45,7 @@ large language model inference, KV-cache quantization, FlashAttention-2, SDPA, e
 \section{Introduction}
 \label{sec:intro}
 
-The rapid advancement of Large Language Models (LLMs) has established transformer-based architectures as the dominant paradigm for natural language processing. Models such as Llama-2~\cite{touvron2023llama}, Qwen2.5~\cite{qwen2025}, and Phi-3~\cite{abdin2024phi} demonstrate remarkable capabilities in reasoning, code generation, and multimodal understanding. However, their deployment on consumer-grade hardware remains fundamentally constrained by GPU memory limitations.
+The rapid advancement of Large Language Models (LLMs) has established transformer-based architectures as the dominant paradigm for natural language processing. Models such as Llama-2~\cite{touvron2023llama}, Qwen2.5~\cite{qwen2023}, and Phi-3~\cite{abdin2024phi} demonstrate remarkable capabilities in reasoning, code generation, and multimodal understanding. However, their deployment on consumer-grade hardware remains fundamentally constrained by GPU memory limitations.
 
 A 3-billion-parameter model stored in 16-bit floating-point precision requires approximately 6\,GB of VRAM solely for weight storage, exceeding the total capacity of entry-level GPUs such as the NVIDIA RTX~3050~Ti (4\,GB). Beyond weights, autoregressive generation necessitates caching key and value tensors (the KV-cache) for every previously generated token, creating a dynamic memory footprint that grows linearly with sequence length and can easily consume the remaining available VRAM.
 
@@ -53,7 +53,7 @@ This paper makes the following contributions:
 \begin{enumerate}
     \item A systematic profiling and benchmarking framework that isolates the memory and compute impact of each optimization layer under a strict 4\,GB VRAM budget.
     \item Empirical evidence that FlashAttention-2 extends maximum context length by 18.9\% over eager attention on commodity hardware.
-    \item Quantitative analysis of 4-bit and 2-bit KV-cache quantization, demonstrating 13.2\% and 15.1\% reductions in per-token memory at the cost of 18--26\% latency overhead.
+    \item Quantitative analysis of 4-bit and 2-bit KV-cache quantization, demonstrating 13.2\% and 15.1\% reductions in per-token memory at the cost of 8--26\% latency overhead depending on precision and context length.
     \item Deployment guidelines for combining attention optimization with KV-cache quantization to maximize context length on VRAM-constrained devices.
 \end{enumerate}
 
@@ -65,9 +65,9 @@ This paper makes the following contributions:
 Post-training quantization reduces the memory footprint of neural network weights by representing parameters in lower precision formats. Dettmers et al.~\cite{dettmers2022llm} demonstrated 8-bit matrix multiplication for transformers, while QLoRA~\cite{dettmers2024qlora} introduced 4-bit NormalFloat (NF4) quantization with double quantization, reducing a 3B-parameter model from approximately 6\,GB to under 2\,GB without fine-tuning.
 
 \subsection{KV-Cache Quantization}
-During autoregressive generation, key and value tensors for all previous tokens must be retained in memory. For a model with $L$ layers, $H$ attention heads, and head dimension $d$, the KV-cache for a sequence of length $S$ requires:
+During autoregressive generation, key and value tensors for all previous tokens must be retained in memory. For a model with $L$ layers, $H_{\text{KV}}$ key-value heads, and head dimension $d$, the KV-cache for a sequence of length $S$ requires:
 \begin{equation}
-M_{\text{KV}} = 2 \times L \times H \times d \times S \times b_{\text{KV}}
+M_{\text{KV}} = 2 \times L \times H_{\text{KV}} \times d \times S \times b_{\text{KV}}
 \label{eq:kv_mem}
 \end{equation}
 where $b_{\text{KV}}$ is the bytes per element. At FP16 precision ($b_{\text{KV}}=2$), this scales linearly and rapidly dominates the memory budget at long contexts. KVQuant~\cite{hooper2024kvquant} demonstrated that quantizing KV-cache entries to sub-byte precision preserves model quality while drastically reducing dynamic memory consumption.
@@ -131,7 +131,7 @@ The primary benchmark model was \texttt{Qwen/Qwen2.5-3B-Instruct}, a 3-billion-p
 \subsection{Baseline Profiling}
 \label{sec:baseline}
 
-Table~\ref{tab:profiler} presents the GPU kernel-level profiling results for the baseline (eager attention, FP16 KV-cache) configuration. Attention operations constitute the dominant compute bottleneck, consuming 23.0\% of total CUDA time, while 4-bit dequantization accounts for 8.5\%.
+Table~\ref{tab:profiler} presents the GPU kernel-level profiling results for the baseline configuration. The two attention kernels (SDPA dispatch and its underlying math kernel) together consume 17.1\% of total CUDA time, while the combined 4-bit operations (\texttt{gemv\_4bit} and \texttt{dequantize\_blockwise}) account for 8.5\%. Note that PyTorch internally routes the HuggingFace ``eager'' attention setting through its \texttt{scaled\_dot\_product\_attention} kernel, which is reflected in the profiled kernel names.
 
 \begin{table}[htbp]
 \caption{Top GPU Kernel Categories (Baseline Profiling)}
@@ -159,20 +159,20 @@ Fig.~\ref{fig:baseline_latency} and Fig.~\ref{fig:baseline_vram} illustrate the 
 
 \begin{figure}[htbp]
 \centerline{\includegraphics[width=0.95\columnwidth]{results/plots/week03_baseline/baseline_latency_vs_length_qwen2.5-3b.png}}
-\caption{Baseline latency scaling with sequence length ($L$). Both p50 and p95 latencies increase linearly from 6{,}201\,ms at $L$=128 to 6{,}649\,ms at $L$=1{,}024.}
+\caption{Baseline latency scaling with sequence length ($L$). p50 latency increases from 6{,}201\,ms at $L$=128 to 6{,}649\,ms at $L$=1{,}024, with p95 ranging from 6{,}224 to 6{,}656\,ms.}
 \label{fig:baseline_latency}
 \end{figure}
 
 \begin{figure}[htbp]
 \centerline{\includegraphics[width=0.95\columnwidth]{results/plots/week03_baseline/baseline_vram_vs_length_qwen2.5-3b.png}}
-\caption{Baseline peak VRAM vs. sequence length. VRAM grows from 2{,}034\,MB at $L$=128 to 2{,}160\,MB at $L$=1{,}024, with OOM occurring at $T_{\max}$=7{,}040 tokens.}
+\caption{Baseline peak VRAM vs. sequence length. VRAM grows from 2{,}034\,MB at $L$=128 to 2{,}160\,MB at $L$=1{,}024, with OOM occurring at $T_{\max}$=6{,}784 tokens.}
 \label{fig:baseline_vram}
 \end{figure}
 
 \subsection{Attention Backend Comparison}
 \label{sec:attention}
 
-Table~\ref{tab:attention_full} reports the full attention backend comparison across three prompt lengths. FlashAttention-2 consistently delivers the lowest latency and VRAM footprint across all sequence lengths tested.
+Table~\ref{tab:attention_full} reports the full attention backend comparison across three prompt lengths. FlashAttention-2 matches or outperforms all other backends in both latency and VRAM footprint across all tested sequence lengths.
 
 \begin{table}[htbp]
 \caption{Attention Backend Performance Comparison}
@@ -216,7 +216,7 @@ Fig.~\ref{fig:attn_latency} visualizes the latency comparison, and Fig.~\ref{fig
 \end{figure}
 
 \subsubsection{Correctness Verification}
-Table~\ref{tab:correctness} reports the token-level agreement rates between each attention backend and the baseline eager configuration. SDPA variants achieve perfect agreement, while FA2 shows 87\% agreement due to numerical differences in the tiled computation, though the top-1 predicted tokens remain semantically equivalent.
+Table~\ref{tab:correctness} reports the token-level agreement rates between each backend and the week~03 baseline traces. SDPA variants achieve perfect agreement because PyTorch's default attention path internally dispatches through the same SDPA math kernel used during baseline collection. Both the eager re-run and FA2 show 87\% agreement due to cross-run numerical nondeterminism, though the top-1 predicted tokens remain semantically equivalent.
 
 \begin{table}[htbp]
 \caption{Attention Backend Correctness vs. Eager Baseline}
@@ -225,7 +225,7 @@ Table~\ref{tab:correctness} reports the token-level agreement rates between each
 \toprule
 \textbf{Backend} & \textbf{Agreement (\%)} & \textbf{Max Logit Diff} \\
 \midrule
-Eager (self) & 87.0 & 25.05 \\
+Eager (re-run) & 87.0 & 25.05 \\
 SDPA Default & \textbf{100.0} & \textbf{0.00} \\
 SDPA Math & \textbf{100.0} & \textbf{0.00} \\
 FlashAttention-2 & 87.0 & 25.04 \\
@@ -359,7 +359,7 @@ FA2 + KV INT2    & 8{,}140 & 8{,}156 & 7.87 & 2{,}086 \\
 \subsection{Zero-Shot Quality Evaluation}
 \label{sec:quality}
 
-To ensure that aggressive quantization does not compromise reasoning ability, we evaluated the model under full compression (NF4 weights + INT4 KV-cache) on three standard NLP benchmarks.
+To evaluate reasoning capability under aggressive compression, we benchmarked the model under full compression (NF4 weights + INT4 KV-cache) on three standard NLP benchmarks.
 
 \begin{table}[htbp]
 \caption{Zero-Shot Accuracy Under Full Compression}
@@ -391,9 +391,9 @@ HellaSwag & 69.0 \\
 The results demonstrate that FlashAttention-2 provides the single most impactful optimization for extending context length on VRAM-constrained hardware. The 18.9\% improvement in $T_{\max}$ is achieved by eliminating the materialization of the $S \times S$ attention matrix in global VRAM. Notably, SDPA provides a modest 3.8\% improvement with zero code changes, making it an effective fallback when FlashAttention-2 is unavailable.
 
 \subsection{KV-Cache Quantization Trade-offs}
-INT4 KV-cache quantization introduces a consistent latency overhead of 8--19\% across tested lengths, attributable to the dequantization operations required during attention computation. The VRAM savings, while proportionally modest at short contexts (0.2\,MB at $L$=128), become increasingly significant at longer sequences. At $L$=1{,}024, INT4 saves 24\,MB; extrapolating to longer contexts, the savings would scale linearly per Eq.~\ref{eq:kv_mem}.
+INT4 KV-cache quantization introduces a consistent latency overhead of 8--19\% across tested lengths, attributable to the dequantization operations required during attention computation. The VRAM savings, while proportionally modest at short contexts (0.2\% or 3.1\,MB at $L$=128), become increasingly significant at longer sequences. At $L$=1{,}024, INT4 saves 24\,MB; extrapolating to longer contexts, the savings would scale linearly per Eq.~\ref{eq:kv_mem}.
 
-Critically, KV-cache quantization alone does not extend $T_{\max}$ (6{,}784 for both eager+FP16 and eager+INT4), because the OOM bottleneck at this model scale is dominated by intermediate attention allocations rather than the KV-cache itself. It is the combination of FA2 (eliminating intermediate allocations) and KV quantization (reducing persistent cache size) that provides the full benefit.
+Critically, KV-cache quantization alone does not extend $T_{\max}$ (6{,}784 for both eager+FP16 and eager+INT4), because the OOM bottleneck at this model scale is dominated by intermediate attention allocations rather than the KV-cache itself. FA2 alone is responsible for extending $T_{\max}$ by eliminating intermediate attention allocations. KV-cache quantization complements this by reducing peak VRAM within that extended ceiling (e.g., from 2{,}115\,MB to 2{,}090\,MB at $L$=1{,}024 with INT4), providing additional headroom near the OOM boundary.
 
 \subsection{Deployment Configuration Flowchart}
 
@@ -410,9 +410,9 @@ Fig.~\ref{fig:decision_tree} presents a decision flowchart for practitioners sel
 ]
 \node[decision] (fa2) {FlashAttention-2\\available?};
 \node[block, below left=0.6cm and -0.3cm of fa2] (sdpa) {Use SDPA Default\\$T_{\max}$=7{,}040};
-\node[decision, below right=0.6cm and -0.3cm of fa2] (long) {Long context\\($>$4K tokens)?};
-\node[block, below left=0.6cm and -0.5cm of long] (fa2only) {Use FA2 only\\$T_{\max}$=8{,}064};
-\node[block, below right=0.6cm and -0.5cm of long] (combined) {Use FA2 + INT4 KV\\$T_{\max}$=8{,}064};
+\node[decision, below right=0.6cm and -0.3cm of fa2] (long) {Minimize peak\\VRAM?};
+\node[block, below left=0.6cm and -0.5cm of long] (fa2only) {Use FA2 only\\(fastest, $T_{\max}$=8{,}064)};
+\node[block, below right=0.6cm and -0.5cm of long] (combined) {Use FA2 + INT4 KV\\(lowest VRAM, $T_{\max}$=8{,}064)};
 
 \draw[arrow] (fa2) -- node[label, left] {No} (sdpa);
 \draw[arrow] (fa2) -- node[label, right] {Yes} (long);
@@ -435,7 +435,7 @@ Fig.~\ref{fig:decision_tree} presents a decision flowchart for practitioners sel
 \section{Conclusion}
 \label{sec:conclusion}
 
-This study demonstrates that the layered combination of 4-bit NF4 weight quantization, FlashAttention-2, and INT4 KV-cache quantization transforms commodity 4\,GB GPUs into viable LLM edge devices. FlashAttention-2 provides the most impactful single optimization, extending maximum context length by 18.9\%. The combined FA2~+ INT4 KV configuration achieves the lowest peak VRAM (2{,}090\,MB at $L$=1{,}024) while maintaining the highest context ceiling (8{,}064 tokens). Zero-shot evaluations confirm that this aggressive compression stack preserves model reasoning capabilities. These results provide actionable deployment guidelines for the growing ecosystem of VRAM-constrained edge inference.
+This study demonstrates that the layered combination of 4-bit NF4 weight quantization, FlashAttention-2, and INT4 KV-cache quantization transforms commodity 4\,GB GPUs into viable LLM edge devices. FlashAttention-2 provides the most impactful single optimization, extending maximum context length by 18.9\%. The combined FA2~+ INT4 KV configuration achieves the best balance of latency and memory, maintaining the highest context ceiling (8{,}064 tokens) at 2{,}090\,MB peak VRAM at $L$=1{,}024 (FA2~+ INT2 reaches a slightly lower 2{,}086\,MB at the cost of additional latency). Zero-shot evaluations demonstrate that this aggressive compression stack retains competitive reasoning performance. These results provide actionable deployment guidelines for the growing ecosystem of VRAM-constrained edge inference.
 
 % ============================================================
 \section*{Acknowledgment}
@@ -444,7 +444,7 @@ The authors thank the Department of Computer Engineering at San Jose State Unive
 \begin{thebibliography}{00}
 \bibitem{touvron2023llama} H. Touvron, L. Martin, K. Stone, et al., ``Llama 2: Open Foundation and Fine-Tuned Chat Models,'' \textit{arXiv preprint arXiv:2307.09288}, 2023.
 
-\bibitem{qwen2025} J. Bai, S. Bai, Y. Chu, et al., ``Qwen Technical Report,'' \textit{arXiv preprint arXiv:2309.16609}, 2023.
+\bibitem{qwen2023} J. Bai, S. Bai, Y. Chu, et al., ``Qwen Technical Report,'' \textit{arXiv preprint arXiv:2309.16609}, 2023.
 
 \bibitem{abdin2024phi} M. Abdin, S. A. Jacobs, A. A. Awan, et al., ``Phi-3 Technical Report: A Highly Capable Language Model Locally on Your Phone,'' \textit{arXiv preprint arXiv:2404.14219}, 2024.
 
