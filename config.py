@@ -20,7 +20,7 @@ SRC_DIR = os.path.join(PROJECT_ROOT, "src")
 SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "scripts")
 
 # ──────────────────────────────────────────────────────────────────────
-# Model candidates (2B–4B parameter range)
+# Model candidates (1B–7B parameter range)
 # ──────────────────────────────────────────────────────────────────────
 MODEL_CANDIDATES: Dict[str, dict] = {
     "qwen2.5-3b": {
@@ -45,10 +45,10 @@ MODEL_CANDIDATES: Dict[str, dict] = {
         "hf_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         "params_b": 1.1,
         "est_4bit_gb": 0.7,
-        "attention": "MHA",
+        "attention": "GQA",
         "num_attention_heads": 32,
-        "num_kv_heads": 32,
-        "notes": "MHA (Llama-2 arch), tiny footprint, ideal for combined config validation.",
+        "num_kv_heads": 4,
+        "notes": "GQA (32Q/4KV, Llama-2 arch), tiny footprint, ideal for combined config validation.",
     },
     "gemma-2-2b": {
         "hf_id": "google/gemma-2-2b-it",
@@ -66,16 +66,50 @@ MODEL_CANDIDATES: Dict[str, dict] = {
         "attention": "MHA",
         "num_attention_heads": 32,
         "num_kv_heads": 32,
+        "multimodal": False,
         "notes": "MHA (32Q/32KV), 7B stress test — weights nearly fill 4 GB VRAM. Ungated mirror.",
     },
+    "phi-3.5-vision": {
+        "hf_id": "microsoft/Phi-3.5-vision-instruct",
+        "params_b": 4.2,
+        "est_4bit_gb": 2.5,
+        "attention": "MHA",
+        "num_attention_heads": 32,
+        "num_kv_heads": 32,
+        "multimodal": True,
+        "trust_remote_code": True,
+        "notes": "Multimodal vision-language model, MHA, supports FA2 natively.",
+    },
+    "llava-1.5-7b": {
+        "hf_id": "llava-hf/llava-1.5-7b-hf",
+        "params_b": 7.0,
+        "est_4bit_gb": 3.5,
+        "attention": "MHA",
+        "num_attention_heads": 32,
+        "num_kv_heads": 32,
+        "multimodal": True,
+        "trust_remote_code": False,
+        "notes": "Multimodal vision-language model (Vicuna backbone), MHA, supports FA2 + KV quant.",
+    },
 }
+
+# Add default values for multimodal and trust_remote_code if not explicitly set
+for _k, _v in MODEL_CANDIDATES.items():
+    _v.setdefault("multimodal", False)
+    _v.setdefault("trust_remote_code", True)
 
 # Primary model (original study)
 DEFAULT_MODEL_KEY = "qwen2.5-3b"
 DEFAULT_MODEL_ID = MODEL_CANDIDATES[DEFAULT_MODEL_KEY]["hf_id"]
 
-# New models for combined attention + KV-cache experiments (MHA, no GQA)
+# Text-only models for combined attention + KV-cache experiments (MHA, no GQA)
 COMBINED_EXPERIMENT_MODELS = ["phi-2", "tinyllama-1.1b", "llama2-7b"]
+
+# Multimodal models
+MULTIMODAL_MODELS = ["phi-3.5-vision", "llava-1.5-7b"]
+
+# Primary benchmarkable models (text-only primary + multimodal)
+PRIMARY_BENCHMARK_MODELS = ["qwen2.5-3b", "phi-3.5-vision", "llava-1.5-7b"]
 
 # ──────────────────────────────────────────────────────────────────────
 # VRAM budget
@@ -142,10 +176,12 @@ WORKLOAD_TYPES = [
 # Attention backends to evaluate
 # ──────────────────────────────────────────────────────────────────────
 ATTENTION_BACKENDS = [
+    "eager",                # Standard eager attention (no SDPA)
+    "sdpa_default",         # PyTorch SDPA with auto backend selection
     "sdpa_flash",           # PyTorch SDPA with flash attention
     "sdpa_mem_efficient",   # PyTorch SDPA with memory-efficient attention
     "sdpa_math",            # PyTorch SDPA with math fallback
-    "eager",                # Standard eager attention (no SDPA)
+    "flash_attention_2",    # External flash-attn package (FA2)
 ]
 
 # ──────────────────────────────────────────────────────────────────────
@@ -160,14 +196,31 @@ CONFIGURATION_IDS = {
     "baseline":             "FP16 KV-cache, eager attention",
     "sdpa_default":         "FP16 KV-cache, SDPA (auto backend)",
     "sdpa_flash":           "FP16 KV-cache, SDPA flash attention",
-    "sdpa_mem_eff":         "FP16 KV-cache, SDPA memory-efficient attention",
+    "sdpa_mem_efficient":   "FP16 KV-cache, SDPA memory-efficient attention",
+    "flash_attention_2":    "FP16 KV-cache, FlashAttention-2 (flash-attn package)",
     "kv_int4":              "INT4 KV-cache, eager attention",
     "kv_int2":              "INT2 KV-cache, eager attention",
     "combined_sdpa_i4":     "INT4 KV-cache, SDPA (auto backend)",
     "combined_sdpa_i2":     "INT2 KV-cache, SDPA (auto backend)",
-    "combined_flash_i4":    "INT4 KV-cache, flash_attention_2",
-    "combined_flash_i2":    "INT2 KV-cache, flash_attention_2",
+    "combined_fa2_i4":      "INT4 KV-cache, FlashAttention-2",
+    "combined_fa2_i2":      "INT2 KV-cache, FlashAttention-2",
 }
+
+# ──────────────────────────────────────────────────────────────────────
+# Multimodal settings
+# ──────────────────────────────────────────────────────────────────────
+MULTIMODAL_TEST_IMAGE_URL = (
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/"
+    "PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png"
+)
+
+MULTIMODAL_PROMPTS = [
+    "Describe this image in detail, including the objects, colors, and spatial relationships.",
+    "What objects do you see in this image? List them with their approximate positions.",
+    "What colors are most prominent in this image? Describe the overall color palette.",
+    "Summarize the main content of this image in one concise sentence.",
+    "Is there any text visible in this image? If so, what does it say?",
+]
 
 # ──────────────────────────────────────────────────────────────────────
 # Default instances

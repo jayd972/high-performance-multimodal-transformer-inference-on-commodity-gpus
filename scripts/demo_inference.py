@@ -90,15 +90,19 @@ def run_inference(model, tokenizer, cfg, prompt, max_new_tokens=64):
     gen_kwargs = {
         "max_new_tokens": max_new_tokens,
         "do_sample": False,
-        "temperature": None,
+        "temperature": 0.0,
         "top_p": None,
     }
 
     if cfg["kv_quant"]:
-        from transformers import QuantizedCacheConfig
-        gen_kwargs["cache_implementation"] = "quantized"
+        from transformers.cache_utils import QuantizedCache
         nbits = 4 if cfg["kv_quant"] == "int4" else 2
-        gen_kwargs["cache_config"] = QuantizedCacheConfig(nbits=nbits)
+        kv_cache = QuantizedCache(
+            backend="quanto",
+            config=model.config,
+            nbits=nbits,
+        )
+        gen_kwargs["past_key_values"] = kv_cache
 
     torch.cuda.reset_peak_memory_stats()
     torch.cuda.synchronize()

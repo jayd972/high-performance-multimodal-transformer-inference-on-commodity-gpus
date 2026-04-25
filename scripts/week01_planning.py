@@ -79,9 +79,9 @@ def generate_vram_budget():
             "weight_budget_gb": VRAM_WEIGHT_BUDGET_GB,
             "headroom_gb": VRAM_HEADROOM_GB,
             "headroom_breakdown": {
-                "kv_cache_gb": 0.4,
-                "activation_buffers_gb": 0.2,
-                "pytorch_overhead_gb": 0.2,
+                "kv_cache_gb": 0.1,
+                "activation_buffers_gb": 0.05,
+                "pytorch_overhead_gb": 0.05,
             },
         },
         "model_fit_analysis": {},

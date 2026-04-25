@@ -182,7 +182,7 @@ def measure_kv_memory_per_token(
     base_prompt: str,
     kv_quant_type: str = "fp16",
     lengths: List[int] = None,
-    max_new_tokens: int = 32,
+    max_new_tokens: int = BENCHMARK_CFG.output_limit,
 ) -> Dict[str, Any]:
     """
     Measure VRAM growth as context length increases to estimate
@@ -328,6 +328,7 @@ def compare_kv_quant_configs(
             results[qt] = {
                 "num_runs": len(latencies),
                 "latency_p50_ms": round(float(np.percentile(latencies, 50)), 2),
+                "latency_p95_ms": round(float(np.percentile(latencies, 95)), 2),
                 "latency_mean_ms": round(float(np.mean(latencies)), 2),
                 "peak_vram_mb": round(float(max(vrams)), 1),
                 "mean_vram_mb": round(float(np.mean(vrams)), 1),

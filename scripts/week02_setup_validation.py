@@ -157,7 +157,7 @@ def generate_install_commands():
             "conda activate llm_inference",
         ],
         "pip_install": [
-            "pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121",
+            "pip install torch==2.6.0+cu124 --index-url https://download.pytorch.org/whl/cu124",
             "pip install -r requirements.txt",
         ],
         "verification": [

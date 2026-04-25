@@ -78,6 +78,33 @@
       ]
     }
   ],
+  "multimodal": [
+    {
+      "id": "mm_01",
+      "text": "Describe this image in detail, including the objects, colors, and spatial relationships.",
+      "category": "image_description"
+    },
+    {
+      "id": "mm_02",
+      "text": "What objects do you see in this image? List them with their approximate positions.",
+      "category": "object_detection"
+    },
+    {
+      "id": "mm_03",
+      "text": "What colors are most prominent in this image? Describe the overall color palette.",
+      "category": "color_analysis"
+    },
+    {
+      "id": "mm_04",
+      "text": "Summarize the main content of this image in one concise sentence.",
+      "category": "summarization"
+    },
+    {
+      "id": "mm_05",
+      "text": "Is there any text visible in this image? If so, what does it say?",
+      "category": "ocr"
+    }
+  ],
   "long_context_seed": {
     "id": "lc_01",
     "text": "The following is a comprehensive technical analysis of modern large language model architectures, their training methodologies, and deployment considerations. Large language models (LLMs) have transformed natural language processing by demonstrating remarkable capabilities across a wide range of tasks. These models are built on the transformer architecture, which uses self-attention mechanisms to process sequences of tokens in parallel rather than sequentially. The key innovation of transformers is the multi-head attention mechanism, which allows the model to attend to different parts of the input simultaneously. Each attention head computes a weighted sum of value vectors, where the weights are determined by the compatibility between query and key vectors. The computational cost of standard attention scales quadratically with sequence length, which has motivated extensive research into efficient attention variants. Flash attention, for example, reduces memory usage by tiling the computation and avoiding materialization of the full attention matrix. Memory-efficient attention implementations use chunked processing to trade compute for memory. The key-value cache is another critical component for efficient autoregressive generation, as it stores previously computed key and value projections to avoid redundant computation during token-by-token generation. However, the KV cache grows linearly with sequence length and can consume significant GPU memory, particularly for long context windows. Quantization techniques can reduce the memory footprint of both model weights and the KV cache. Weight quantization to 4-bit precision using methods like GPTQ or bitsandbytes NF4 can reduce model size by approximately 4x with minimal quality degradation. KV cache quantization is a more recent development that applies similar compression to the cached key-value pairs during inference. The effectiveness of these optimizations depends heavily on the target hardware, particularly GPU memory capacity, memory bandwidth, and compute throughput. Consumer-grade GPUs with limited VRAM present unique challenges for deploying these models, requiring careful orchestration of quantization, attention optimization, and memory management strategies.",

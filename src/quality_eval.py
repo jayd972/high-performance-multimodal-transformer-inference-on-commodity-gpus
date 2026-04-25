@@ -54,7 +54,7 @@ def load_eval_dataset(
                 "answer_idx": answer_idx,
             })
 
-    elif dataset_name in ("piqa", "google/boolq"):
+    elif dataset_name == "google/boolq":
         ds = load_dataset("google/boolq", split="validation")
         ds = ds.shuffle(seed=seed).select(range(min(num_examples, len(ds))))
 

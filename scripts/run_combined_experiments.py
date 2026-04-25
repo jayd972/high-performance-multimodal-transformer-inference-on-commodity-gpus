@@ -185,7 +185,7 @@ def run_model_experiments(model_key: str):
             batch_size=1,
             num_runs=qt_data.get("num_runs", 0),
             latency_p50_ms=qt_data.get("latency_p50_ms", 0),
-            latency_p95_ms=qt_data.get("latency_p50_ms", 0),
+            latency_p95_ms=qt_data.get("latency_p95_ms", 0),
             latency_mean_ms=qt_data.get("latency_mean_ms", 0),
             throughput_tokens_per_s=round(
                 BENCHMARK_CFG.output_limit / (qt_data.get("latency_mean_ms", 1) / 1000), 2
@@ -241,7 +241,7 @@ def run_model_experiments(model_key: str):
                     batch_size=1,
                     num_runs=qt_data.get("num_runs", 0),
                     latency_p50_ms=qt_data.get("latency_p50_ms", 0),
-                    latency_p95_ms=qt_data.get("latency_p50_ms", 0),
+                    latency_p95_ms=qt_data.get("latency_p95_ms", 0),
                     latency_mean_ms=qt_data.get("latency_mean_ms", 0),
                     throughput_tokens_per_s=round(
                         BENCHMARK_CFG.output_limit / (qt_data.get("latency_mean_ms", 1) / 1000), 2
@@ -290,7 +290,7 @@ def run_model_experiments(model_key: str):
         oom_thresholds["flash_attention_2"] = oom
 
         for kv_qt in ["int4", "int2"]:
-            config_id = f"combined_flash_{kv_qt[-2:]}"
+            config_id = f"combined_fa2_{kv_qt[-2:]}"
             logger.info(f"  Testing combined: flash_attention_2 + KV {kv_qt}")
 
             test_result = run_inference_with_kv_quant(
@@ -323,7 +323,7 @@ def run_model_experiments(model_key: str):
                         batch_size=1,
                         num_runs=qt_data.get("num_runs", 0),
                         latency_p50_ms=qt_data.get("latency_p50_ms", 0),
-                        latency_p95_ms=qt_data.get("latency_p50_ms", 0),
+                        latency_p95_ms=qt_data.get("latency_p95_ms", 0),
                         latency_mean_ms=qt_data.get("latency_mean_ms", 0),
                         throughput_tokens_per_s=round(
                             BENCHMARK_CFG.output_limit / (qt_data.get("latency_mean_ms", 1) / 1000), 2

@@ -6,16 +6,21 @@ Deliverables:
   - Correctness metrics: agreement rate and logit difference
   - Memory per token measurement
   - Decision on whether deeper integration is pursued
+
+Usage:
+  python scripts/week07_kv_cache.py
+  python scripts/week07_kv_cache.py --model qwen2.5-3b
 """
 
 import os
 import sys
 import json
+import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import (
-    DEFAULT_MODEL_ID, BENCHMARK_CFG, CORRECTNESS_CFG,
+    MODEL_CANDIDATES, PRIMARY_BENCHMARK_MODELS, BENCHMARK_CFG, CORRECTNESS_CFG,
     KV_CACHE_QUANT_TYPES, RESULTS_DIR, PROMPTS_DIR,
 )
 from src.utils import setup_logging, save_results_json, set_seed
@@ -24,26 +29,21 @@ from src.kv_cache_quant import (
     check_kv_quant_support, run_inference_with_kv_quant,
     measure_kv_memory_per_token, compare_kv_quant_configs,
 )
-from src.correctness import run_correctness_suite, collect_logits_trace
+from src.correctness import run_correctness_suite
 
 logger = setup_logging("week07")
 
-WEEK_DIR = os.path.join(RESULTS_DIR, "week07_kv_cache")
-os.makedirs(WEEK_DIR, exist_ok=True)
 
-
-def check_kv_support():
-    """Check and document KV-cache quantization support."""
+def check_kv_support(out_dir):
     logger.info("Checking KV-cache quantization support...")
     support = check_kv_quant_support()
-    save_results_json(support, os.path.join(WEEK_DIR, "kv_quant_support.json"))
+    save_results_json(support, os.path.join(out_dir, "kv_quant_support.json"))
     logger.info(f"  Transformers KV quant: {support['transformers_kv_quant']}")
     logger.info(f"  Quanto available: {support['quanto_available']}")
     return support
 
 
-def test_kv_quant_prototype(model, tokenizer):
-    """Test KV-cache quantization end to end."""
+def test_kv_quant_prototype(model, tokenizer, out_dir):
     logger.info("Testing KV-cache quantization prototype...")
 
     with open(os.path.join(PROMPTS_DIR, "fixed_prompts.json")) as f:
@@ -64,18 +64,20 @@ def test_kv_quant_prototype(model, tokenizer):
             logger.info(f"    Latency: {result['total_time_ms']:.0f}ms")
             logger.info(f"    Peak VRAM: {result['peak_vram_mb']:.0f}MB")
 
-    save_results_json(prototype_results, os.path.join(WEEK_DIR, "kv_quant_prototype.json"))
+    save_results_json(prototype_results, os.path.join(out_dir, "kv_quant_prototype.json"))
     return prototype_results
 
 
-def run_kv_correctness(model, tokenizer, kv_quant_type: str):
-    """Run correctness verification with KV-cache quantization."""
+def run_kv_correctness(model, tokenizer, kv_quant_type, model_key, out_dir):
     logger.info(f"Running correctness check for KV {kv_quant_type}...")
 
-    # Load baseline traces
     baseline_path = os.path.join(
-        RESULTS_DIR, "week03_baseline", "baseline_correctness_full.json"
+        RESULTS_DIR, "week03_baseline", model_key, "baseline_correctness_full.json"
     )
+    if not os.path.exists(baseline_path):
+        baseline_path = os.path.join(
+            RESULTS_DIR, "week03_baseline", "baseline_correctness_full.json"
+        )
     baseline_traces = None
     if os.path.exists(baseline_path):
         from src.utils import load_results_json
@@ -89,9 +91,6 @@ def run_kv_correctness(model, tokenizer, kv_quant_type: str):
         p["text"] for p in prompts_data["single_turn"][:CORRECTNESS_CFG.num_fixed_prompts]
     ]
 
-    # Note: KV-cache quantization is applied during generate(), not forward()
-    # So we collect traces using standard forward passes and compare
-    # the final generation output instead
     result = run_correctness_suite(
         model=model, tokenizer=tokenizer,
         prompts=correctness_prompts,
@@ -104,8 +103,7 @@ def run_kv_correctness(model, tokenizer, kv_quant_type: str):
     return result
 
 
-def run_memory_per_token(model, tokenizer):
-    """Measure KV-cache memory growth per token for each quantization type."""
+def run_memory_per_token(model, tokenizer, out_dir):
     logger.info("Measuring KV-cache memory per token...")
 
     with open(os.path.join(PROMPTS_DIR, "fixed_prompts.json")) as f:
@@ -120,17 +118,15 @@ def run_memory_per_token(model, tokenizer):
             base_prompt=base_prompt,
             kv_quant_type=qt,
             lengths=[64, 128, 256, 512, 768, 1024],
-            max_new_tokens=32,
         )
         results[qt] = result
         logger.info(f"    Estimated MB/token: {result['estimated_mb_per_token']}")
 
-    save_results_json(results, os.path.join(WEEK_DIR, "kv_memory_per_token.json"))
+    save_results_json(results, os.path.join(out_dir, "kv_memory_per_token.json"))
     return results
 
 
-def make_deeper_integration_decision(prototype_results, memory_results):
-    """Decide whether deeper framework integration is justified."""
+def make_deeper_integration_decision(prototype_results, memory_results, out_dir):
     decision = {
         "recommendation": "",
         "rationale": "",
@@ -147,10 +143,10 @@ def make_deeper_integration_decision(prototype_results, memory_results):
                 f"{qt}: {res.get('error', 'unknown error')}"
             )
 
-    if "int8" in successful:
-        decision["available_methods"].append("int8")
     if "int4" in successful:
         decision["available_methods"].append("int4")
+    if "int2" in successful:
+        decision["available_methods"].append("int2")
 
     if successful:
         decision["recommendation"] = "USE_EXISTING"
@@ -163,64 +159,59 @@ def make_deeper_integration_decision(prototype_results, memory_results):
         decision["recommendation"] = "SKIP_OR_USE_LLAMA_CPP"
         decision["rationale"] = (
             "KV-cache quantization via transformers/quanto is not functional. "
-            "Consider using llama.cpp as a fallback for KV quantization experiments, "
-            "or report this as a limitation."
+            "Consider using llama.cpp as a fallback."
         )
 
-    save_results_json(decision, os.path.join(WEEK_DIR, "integration_decision.json"))
+    save_results_json(decision, os.path.join(out_dir, "integration_decision.json"))
     logger.info(f"  Decision: {decision['recommendation']}")
-    logger.info(f"  Rationale: {decision['rationale']}")
     return decision
 
 
-def main():
-    logger.info("=" * 60)
-    logger.info("WEEK 07 — KV-Cache Quantization Phase")
-    logger.info("=" * 60)
+def run_for_model(model_key: str):
+    import torch
 
-    set_seed(BENCHMARK_CFG.seed)
+    model_info = MODEL_CANDIDATES[model_key]
+    model_id = model_info["hf_id"]
+    is_multimodal = model_info.get("multimodal", False)
 
-    # 1. Check support
-    support = check_kv_support()
+    out_dir = os.path.join(RESULTS_DIR, "week07_kv_cache", model_key)
+    os.makedirs(out_dir, exist_ok=True)
 
-    # 2. Load model
-    logger.info(f"Loading model: {DEFAULT_MODEL_ID}")
-    model, tokenizer = load_model_4bit(DEFAULT_MODEL_ID)
+    support = check_kv_support(out_dir)
 
-    # 3. Prototype test
-    prototype_results = test_kv_quant_prototype(model, tokenizer)
+    logger.info(f"Loading model: {model_id}")
+    if is_multimodal:
+        from src.multimodal_loader import load_multimodal_model_4bit
+        model, processor = load_multimodal_model_4bit(model_key)
+        tokenizer = getattr(processor, "tokenizer", processor)
+    else:
+        model, tokenizer = load_model_4bit(model_id)
 
-    # 4. Correctness
+    prototype_results = test_kv_quant_prototype(model, tokenizer, out_dir)
+
     correctness_results = {}
     for qt in ["int4", "int2"]:
         if prototype_results.get(qt, {}).get("status") == "success":
-            corr = run_kv_correctness(model, tokenizer, qt)
+            corr = run_kv_correctness(model, tokenizer, qt, model_key, out_dir)
             correctness_results[qt] = {
                 "config_id": corr.get("config_id"),
                 "aggregate": corr.get("aggregate", {}),
             }
 
-    save_results_json(
-        correctness_results,
-        os.path.join(WEEK_DIR, "kv_correctness_report.json"),
-    )
+    save_results_json(correctness_results, os.path.join(out_dir, "kv_correctness_report.json"))
 
-    # 5. Memory per token
-    memory_results = run_memory_per_token(model, tokenizer)
+    memory_results = run_memory_per_token(model, tokenizer, out_dir)
+    decision = make_deeper_integration_decision(prototype_results, memory_results, out_dir)
 
-    # 6. Integration decision
-    decision = make_deeper_integration_decision(prototype_results, memory_results)
-
-    # Summary
     summary = {
         "week": "07",
         "title": "KV-Cache Quantization Phase",
         "status": "COMPLETE",
+        "model_key": model_key,
         "kv_quant_support": support,
         "prototype_status": {
             qt: res.get("status") for qt, res in prototype_results.items()
         },
-        "correctness_summary": correctness_results,
         "integration_decision": decision["recommendation"],
         "deliverables": [
             "kv_quant_support.json",
@@ -230,16 +221,52 @@ def main():
             "integration_decision.json",
         ],
     }
-    save_results_json(summary, os.path.join(WEEK_DIR, "week07_summary.json"))
+    save_results_json(summary, os.path.join(out_dir, "week07_summary.json"))
 
-    logger.info("=" * 60)
-    logger.info("Week 07 deliverables saved to: " + WEEK_DIR)
-    logger.info("=" * 60)
-
-    import torch
-    del model, tokenizer
+    del model
+    if is_multimodal:
+        del processor
+    else:
+        del tokenizer
     torch.cuda.empty_cache()
 
 
+def main(model_keys=None):
+    from src.utils import CheckpointManager
+    ckpt = CheckpointManager("week07")
+
+    logger.info("=" * 60)
+    logger.info("WEEK 07 — KV-Cache Quantization Phase")
+    logger.info("=" * 60)
+
+    set_seed(BENCHMARK_CFG.seed)
+
+    if model_keys is None:
+        model_keys = list(PRIMARY_BENCHMARK_MODELS)
+
+    for model_key in model_keys:
+        if ckpt.is_done(model_key):
+            logger.info(f"[SKIP] {model_key} already done (checkpoint)")
+            continue
+        logger.info(f"\n{'#' * 50}")
+        logger.info(f"# Model: {model_key}")
+        logger.info(f"{'#' * 50}")
+        try:
+            run_for_model(model_key)
+            ckpt.mark_done(model_key)
+            logger.info(f"[CHECKPOINT] {model_key} saved")
+        except Exception as e:
+            logger.error(f"Failed for {model_key}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    logger.info("=" * 60)
+    logger.info("Week 07 complete")
+    logger.info("=" * 60)
+
+
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, nargs="+", default=None)
+    args = parser.parse_args()
+    main(model_keys=args.model)

@@ -245,7 +245,7 @@ def run_benchmark_sweep(
     Returns a list of BenchmarkResult objects.
     """
     if prompt_lengths is None:
-        prompt_lengths = [128, 512, 1024]
+        prompt_lengths = list(BENCHMARK_CFG.prompt_lengths)
     if batch_sizes is None:
         batch_sizes = list(BENCHMARK_CFG.batch_sizes)
 

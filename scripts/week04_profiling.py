@@ -10,10 +10,11 @@ Deliverables:
 import os
 import sys
 import json
+import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import DEFAULT_MODEL_ID, BENCHMARK_CFG, RESULTS_DIR, PROMPTS_DIR
+from config import DEFAULT_MODEL_ID, MODEL_CANDIDATES, BENCHMARK_CFG, RESULTS_DIR, PROMPTS_DIR
 from src.utils import setup_logging, save_results_json, set_seed
 from src.model_loader import load_model_4bit
 from src.profiler import profile_inference, identify_bottlenecks
@@ -194,4 +195,8 @@ def main():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, nargs="+", default=None,
+                        help="Model key(s) — week04 uses DEFAULT_MODEL_ID regardless")
+    parser.parse_args()
     main()

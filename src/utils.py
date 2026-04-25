@@ -222,3 +222,48 @@ class Timer:
     @property
     def elapsed_ms(self) -> float:
         return (self.elapsed or 0.0) * 1000
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Checkpoint / resume helpers
+# ──────────────────────────────────────────────────────────────────────
+
+class CheckpointManager:
+    """Tracks completed (week, model) pairs so runs can resume after crashes.
+
+    Stores a simple JSON file at ``results/.checkpoints/<tag>.json`` mapping
+    completed keys to ``True``.  Call ``is_done(key)`` before expensive work
+    and ``mark_done(key)`` after it succeeds.
+    """
+
+    def __init__(self, tag: str, results_dir: Optional[str] = None):
+        if results_dir is None:
+            results_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "results",
+            )
+        self._dir = os.path.join(results_dir, ".checkpoints")
+        os.makedirs(self._dir, exist_ok=True)
+        self._path = os.path.join(self._dir, f"{tag}.json")
+        self._state: Dict[str, bool] = {}
+        if os.path.exists(self._path):
+            with open(self._path, "r", encoding="utf-8") as f:
+                self._state = json.load(f)
+
+    def is_done(self, key: str) -> bool:
+        return self._state.get(key, False)
+
+    def mark_done(self, key: str) -> None:
+        self._state[key] = True
+        self._flush()
+
+    def reset(self) -> None:
+        self._state = {}
+        self._flush()
+
+    def _flush(self) -> None:
+        with open(self._path, "w", encoding="utf-8") as f:
+            json.dump(self._state, f, indent=2)
+
+    def summary(self) -> Dict[str, bool]:
+        return dict(self._state)

@@ -1,10 +1,17 @@
 """
-Master runner — Executes all weekly scripts sequentially.
+Master runner — Executes all weekly scripts sequentially with checkpointing.
+
+Checkpoints are saved per (week, model) so if your laptop crashes, re-running
+the same command will skip already-completed work.
 
 Usage:
-    python scripts/run_all.py              # Run all weeks
-    python scripts/run_all.py --week 3     # Run specific week
-    python scripts/run_all.py --from 5     # Run from week 5 onward
+    python scripts/run_all.py                         # Run all weeks, all models
+    python scripts/run_all.py --week 3                # Run specific week
+    python scripts/run_all.py --from 5 --to 8         # Run weeks 5-8
+    python scripts/run_all.py --model qwen2.5-3b      # Run all weeks for one model
+    python scripts/run_all.py --multimodal             # Run multimodal benchmarks only
+    python scripts/run_all.py --plots                  # Generate plots after running
+    python scripts/run_all.py --reset-checkpoints      # Clear all checkpoints and start fresh
 """
 
 import os
@@ -14,6 +21,8 @@ import importlib
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.utils import CheckpointManager
 
 SCRIPTS = {
     1: ("week01_planning", "Planning & Scope Definition"),
@@ -27,15 +36,25 @@ SCRIPTS = {
     9: ("week09_combined", "Combined Configuration"),
     10: ("week10_full_benchmark", "Full Benchmark Suite"),
 }
-# Weeks 11–14 are documentation/report phases (no runnable scripts).
-# Results are in results/week11_packaging/ through results/week14_final/.
+
+WEEKS_WITH_MODEL_SUPPORT = {3, 5, 6, 7, 8, 9, 10}
+
+ckpt = CheckpointManager("run_all")
 
 
-def run_week(week_num: int) -> bool:
-    """Run a specific week's script."""
+def run_week(week_num: int, model_keys=None) -> bool:
+    """Run a specific week's script with checkpoint awareness."""
     if week_num not in SCRIPTS:
         print(f"Week {week_num} not found.")
         return False
+
+    ckpt_key = f"week{week_num:02d}"
+    if model_keys:
+        ckpt_key += f"_{'_'.join(sorted(model_keys))}"
+
+    if ckpt.is_done(ckpt_key):
+        print(f"  [SKIP] Week {week_num:02d} already completed (checkpoint found)")
+        return True
 
     module_name, title = SCRIPTS[week_num]
     print(f"\n{'#' * 60}")
@@ -45,12 +64,47 @@ def run_week(week_num: int) -> bool:
     try:
         start = time.time()
         module = importlib.import_module(f"scripts.{module_name}")
-        module.main()
+
+        if model_keys and week_num in WEEKS_WITH_MODEL_SUPPORT:
+            module.main(model_keys=model_keys)
+        else:
+            module.main()
+
         elapsed = time.time() - start
-        print(f"\nWeek {week_num:02d} completed in {elapsed:.1f}s\n")
+        ckpt.mark_done(ckpt_key)
+        print(f"\nWeek {week_num:02d} completed in {elapsed:.1f}s  [CHECKPOINT SAVED]\n")
         return True
     except Exception as e:
         print(f"\nWeek {week_num:02d} FAILED: {e}\n")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def run_multimodal(model_keys=None) -> bool:
+    """Run multimodal-specific benchmarks with checkpointing."""
+    ckpt_key = "multimodal"
+    if model_keys:
+        ckpt_key += f"_{'_'.join(sorted(model_keys))}"
+
+    if ckpt.is_done(ckpt_key):
+        print(f"  [SKIP] Multimodal already completed (checkpoint found)")
+        return True
+
+    print(f"\n{'#' * 60}")
+    print(f"# MULTIMODAL — Vision-Language Model Benchmarks")
+    print(f"{'#' * 60}\n")
+
+    try:
+        start = time.time()
+        module = importlib.import_module("scripts.week_multimodal")
+        module.main(model_keys=model_keys)
+        elapsed = time.time() - start
+        ckpt.mark_done(ckpt_key)
+        print(f"\nMultimodal benchmarks completed in {elapsed:.1f}s  [CHECKPOINT SAVED]\n")
+        return True
+    except Exception as e:
+        print(f"\nMultimodal benchmarks FAILED: {e}\n")
         import traceback
         traceback.print_exc()
         return False
@@ -63,26 +117,45 @@ def main():
                         help="Start from this week (default: 1)")
     parser.add_argument("--to", type=int, default=10,
                         help="End at this week (default: 10)")
+    parser.add_argument("--model", type=str, nargs="+", default=None,
+                        help="Model key(s) to benchmark (default: all)")
+    parser.add_argument("--multimodal", action="store_true",
+                        help="Run multimodal benchmarks")
     parser.add_argument("--plots", action="store_true",
                         help="Generate plots after running")
+    parser.add_argument("--reset-checkpoints", action="store_true",
+                        help="Clear all checkpoints and start fresh")
     args = parser.parse_args()
+
+    if args.reset_checkpoints:
+        ckpt.reset()
+        print("All checkpoints cleared.")
 
     total_start = time.time()
     results = {}
 
-    if args.week:
-        success = run_week(args.week)
+    if args.multimodal:
+        success = run_multimodal(model_keys=args.model)
+        results["multimodal"] = success
+    elif args.week:
+        success = run_week(args.week, model_keys=args.model)
         results[args.week] = success
     else:
         for week_num in range(args.from_week, args.to + 1):
             if week_num in SCRIPTS:
-                success = run_week(week_num)
+                success = run_week(week_num, model_keys=args.model)
                 results[week_num] = success
                 if not success:
-                    print(f"Stopping at week {week_num} due to failure.")
-                    break
+                    print(f"Week {week_num} failed — continuing to next week...")
 
-    # Generate plots if requested
+        if args.model is None or any(
+            m in (args.model or [])
+            for m in ["phi-3.5-vision", "llava-1.5-7b"]
+        ):
+            mm_keys = args.model if args.model else None
+            success = run_multimodal(model_keys=mm_keys)
+            results["multimodal"] = success
+
     if args.plots:
         print("\nGenerating plots...")
         try:
@@ -93,15 +166,20 @@ def main():
 
     total_elapsed = time.time() - total_start
 
-    # Summary
     print(f"\n{'=' * 60}")
     print("EXECUTION SUMMARY")
     print(f"{'=' * 60}")
-    for week, success in results.items():
+    for key, success in results.items():
         status = "PASS" if success else "FAIL"
-        _, title = SCRIPTS[week]
-        print(f"  Week {week:02d} ({title}): {status}")
-    print(f"\nTotal time: {total_elapsed:.1f}s")
+        if isinstance(key, int):
+            _, title = SCRIPTS[key]
+            print(f"  Week {key:02d} ({title}): {status}")
+        else:
+            print(f"  {key}: {status}")
+    if args.model:
+        print(f"\nModel(s): {', '.join(args.model)}")
+    print(f"\nCheckpoint file: {ckpt._path}")
+    print(f"Total time: {total_elapsed:.1f}s")
     print(f"{'=' * 60}")
 
 

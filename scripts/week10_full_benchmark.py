@@ -5,16 +5,24 @@ Deliverables:
   - Final benchmark dataset and consolidated summary table
   - Final plots ready for report
   - Draft configuration guideline section
+
+Usage:
+  python scripts/week10_full_benchmark.py
+  python scripts/week10_full_benchmark.py --model qwen2.5-3b
 """
 
 import os
 import sys
 import json
 import gc
+import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import DEFAULT_MODEL_ID, BENCHMARK_CFG, RESULTS_DIR, PROMPTS_DIR
+from config import (
+    MODEL_CANDIDATES, PRIMARY_BENCHMARK_MODELS, BENCHMARK_CFG,
+    RESULTS_DIR, PROMPTS_DIR,
+)
 from src.utils import (
     setup_logging, save_results_json, save_results_csv,
     set_seed, load_results_json,
@@ -29,15 +37,30 @@ import torch
 
 logger = setup_logging("week10")
 
-WEEK_DIR = os.path.join(RESULTS_DIR, "week10_full_benchmark")
-os.makedirs(WEEK_DIR, exist_ok=True)
+
+def _load_model_for_attn(model_key, attn_implementation):
+    model_info = MODEL_CANDIDATES[model_key]
+    model_id = model_info["hf_id"]
+    if model_info.get("multimodal", False):
+        from src.multimodal_loader import load_multimodal_model_4bit
+        model, processor = load_multimodal_model_4bit(
+            model_key, attn_implementation=attn_implementation
+        )
+        tokenizer = getattr(processor, "tokenizer", processor)
+    else:
+        model, tokenizer = load_model_4bit(model_id, attn_implementation=attn_implementation)
+    return model, tokenizer
 
 
-def load_runbook():
+def load_runbook(model_key):
     """Load the final benchmark runbook from week 09."""
     runbook_path = os.path.join(
-        RESULTS_DIR, "week09_combined", "final_benchmark_runbook.json"
+        RESULTS_DIR, "week09_combined", model_key, "final_benchmark_runbook.json"
     )
+    if not os.path.exists(runbook_path):
+        runbook_path = os.path.join(
+            RESULTS_DIR, "week09_combined", "final_benchmark_runbook.json"
+        )
     if os.path.exists(runbook_path):
         return load_results_json(runbook_path)
     else:
@@ -46,16 +69,20 @@ def load_runbook():
             "configurations": [
                 {"id": "baseline", "attn_implementation": "eager", "kv_quant": "fp16"},
                 {"id": "sdpa_default", "attn_implementation": "sdpa", "kv_quant": "fp16"},
+                {"id": "flash_attention_2", "attn_implementation": "flash_attention_2", "kv_quant": "fp16"},
                 {"id": "kv_int4", "attn_implementation": "eager", "kv_quant": "int4"},
             ],
         }
 
 
-def run_full_benchmark_suite():
+def run_full_benchmark_suite(model_key):
     """Run benchmarks for every configuration in the runbook."""
-    logger.info("Running full benchmark suite...")
+    logger.info(f"Running full benchmark suite for {model_key}...")
 
-    runbook = load_runbook()
+    model_info = MODEL_CANDIDATES[model_key]
+    model_id = model_info["hf_id"]
+
+    runbook = load_runbook(model_key)
     configs = runbook.get("configurations", [])
 
     with open(os.path.join(PROMPTS_DIR, "fixed_prompts.json")) as f:
@@ -77,19 +104,15 @@ def run_full_benchmark_suite():
         logger.info(f"  attn={attn_impl}, sdpa_backend={sdpa_bk}, kv_quant={kv_quant}")
         logger.info(f"{'='*40}")
 
-        # Load model with appropriate attention
         torch.cuda.empty_cache()
         gc.collect()
 
         try:
-            model, tokenizer = load_model_4bit(
-                DEFAULT_MODEL_ID, attn_implementation=attn_impl,
-            )
+            model, tokenizer = _load_model_for_attn(model_key, attn_implementation=attn_impl)
         except Exception as e:
             logger.error(f"Failed to load model for {config_id}: {e}")
             continue
 
-        # Run benchmark sweep
         try:
             ctx = sdpa_backend(sdpa_bk) if sdpa_bk else sdpa_backend("default")
             with ctx:
@@ -128,7 +151,7 @@ def run_full_benchmark_suite():
                             batch_size=1,
                             num_runs=qt_data.get("num_runs", 0),
                             latency_p50_ms=qt_data.get("latency_p50_ms", 0),
-                            latency_p95_ms=qt_data.get("latency_p50_ms", 0),
+                            latency_p95_ms=qt_data.get("latency_p95_ms", qt_data.get("latency_p50_ms", 0)),
                             latency_mean_ms=qt_data.get("latency_mean_ms", 0),
                             throughput_tokens_per_s=round(
                                 BENCHMARK_CFG.output_limit / (qt_data.get("latency_mean_ms", 1) / 1000), 2
@@ -151,30 +174,26 @@ def run_full_benchmark_suite():
         except Exception as e:
             logger.error(f"Benchmark failed for {config_id}: {e}")
 
-        # Clean up
-        del model
+        del model, tokenizer
         torch.cuda.empty_cache()
         gc.collect()
 
     return all_results, oom_thresholds
 
 
-def generate_consolidated_table(all_results):
-    """Generate the final consolidated benchmark table."""
+def generate_consolidated_table(all_results, out_dir):
     table_rows = results_to_table(all_results)
-    save_results_csv(table_rows, os.path.join(WEEK_DIR, "final_benchmark_table.csv"))
-    save_results_json(table_rows, os.path.join(WEEK_DIR, "final_benchmark_table.json"))
+    save_results_csv(table_rows, os.path.join(out_dir, "final_benchmark_table.csv"))
+    save_results_json(table_rows, os.path.join(out_dir, "final_benchmark_table.json"))
     logger.info(f"Consolidated table: {len(table_rows)} rows")
     return table_rows
 
 
-def generate_configuration_guidelines(all_results, oom_thresholds):
-    """Generate practical configuration guidelines."""
-
+def generate_configuration_guidelines(all_results, oom_thresholds, model_id, out_dir):
     guidelines = {
         "title": "Configuration Guidelines for 4 GB VRAM Laptops",
         "target_hardware": "NVIDIA RTX 3050 Ti Laptop (4 GB VRAM)",
-        "model": DEFAULT_MODEL_ID,
+        "model": model_id,
         "quantization": "4-bit NF4 with double quantization",
         "recommendations": [],
         "oom_thresholds": {
@@ -183,7 +202,6 @@ def generate_configuration_guidelines(all_results, oom_thresholds):
         },
     }
 
-    # Analyze results to generate recommendations
     config_summaries = {}
     for r in all_results:
         cid = r.config_id
@@ -191,13 +209,11 @@ def generate_configuration_guidelines(all_results, oom_thresholds):
             config_summaries[cid] = []
         config_summaries[cid].append(r)
 
-    # Find best config for each metric
     best_latency = None
     best_throughput = None
     best_vram = None
 
     for cid, results in config_summaries.items():
-        # Average across prompt lengths for batch_size=1
         bs1 = [r for r in results if r.batch_size == 1 and not r.oom_occurred]
         if not bs1:
             continue
@@ -236,40 +252,33 @@ def generate_configuration_guidelines(all_results, oom_thresholds):
 
     guidelines["general_advice"] = [
         "Always use 4-bit weight quantization on 4 GB VRAM GPUs.",
-        "Start with batch_size=1 for reliability; batch_size=4 may OOM at longer contexts.",
+        "Use FlashAttention-2 when available for maximum context length.",
+        "Use SDPA attention as a zero-effort fallback.",
+        "KV-cache INT4 can save VRAM at longer context lengths.",
         "Monitor GPU temperature; laptop GPUs throttle under sustained load.",
-        "Use SDPA attention when available for lower VRAM usage.",
-        "KV-cache quantization (INT4) can save VRAM at longer context lengths with minimal quality cost.",
     ]
 
-    save_results_json(guidelines, os.path.join(WEEK_DIR, "configuration_guidelines.json"))
+    save_results_json(guidelines, os.path.join(out_dir, "configuration_guidelines.json"))
     return guidelines
 
 
-def main():
-    logger.info("=" * 60)
-    logger.info("WEEK 10 — Full Benchmark Suite")
-    logger.info("=" * 60)
+def run_for_model(model_key: str):
+    model_info = MODEL_CANDIDATES[model_key]
+    model_id = model_info["hf_id"]
 
-    set_seed(BENCHMARK_CFG.seed)
+    out_dir = os.path.join(RESULTS_DIR, "week10_full_benchmark", model_key)
+    os.makedirs(out_dir, exist_ok=True)
 
-    # 1. Run full benchmark suite
-    all_results, oom_thresholds = run_full_benchmark_suite()
+    all_results, oom_thresholds = run_full_benchmark_suite(model_key)
+    table_rows = generate_consolidated_table(all_results, out_dir)
+    save_results_json(oom_thresholds, os.path.join(out_dir, "oom_thresholds.json"))
+    guidelines = generate_configuration_guidelines(all_results, oom_thresholds, model_id, out_dir)
 
-    # 2. Consolidated table
-    table_rows = generate_consolidated_table(all_results)
-
-    # 3. OOM thresholds
-    save_results_json(oom_thresholds, os.path.join(WEEK_DIR, "oom_thresholds.json"))
-
-    # 4. Configuration guidelines
-    guidelines = generate_configuration_guidelines(all_results, oom_thresholds)
-
-    # Summary
     summary = {
         "week": "10",
         "title": "Full Benchmark Suite",
         "status": "COMPLETE",
+        "model_key": model_key,
         "total_benchmark_rows": len(table_rows),
         "configurations_benchmarked": len(set(r.config_id for r in all_results)),
         "oom_thresholds": {
@@ -282,12 +291,45 @@ def main():
             "configuration_guidelines.json",
         ],
     }
-    save_results_json(summary, os.path.join(WEEK_DIR, "week10_summary.json"))
+    save_results_json(summary, os.path.join(out_dir, "week10_summary.json"))
+
+
+def main(model_keys=None):
+    from src.utils import CheckpointManager
+    ckpt = CheckpointManager("week10")
 
     logger.info("=" * 60)
-    logger.info("Week 10 deliverables saved to: " + WEEK_DIR)
+    logger.info("WEEK 10 — Full Benchmark Suite")
+    logger.info("=" * 60)
+
+    set_seed(BENCHMARK_CFG.seed)
+
+    if model_keys is None:
+        model_keys = list(PRIMARY_BENCHMARK_MODELS)
+
+    for model_key in model_keys:
+        if ckpt.is_done(model_key):
+            logger.info(f"[SKIP] {model_key} already done (checkpoint)")
+            continue
+        logger.info(f"\n{'#' * 50}")
+        logger.info(f"# Model: {model_key}")
+        logger.info(f"{'#' * 50}")
+        try:
+            run_for_model(model_key)
+            ckpt.mark_done(model_key)
+            logger.info(f"[CHECKPOINT] {model_key} saved")
+        except Exception as e:
+            logger.error(f"Failed for {model_key}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    logger.info("=" * 60)
+    logger.info("Week 10 complete")
     logger.info("=" * 60)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, nargs="+", default=None)
+    args = parser.parse_args()
+    main(model_keys=args.model)

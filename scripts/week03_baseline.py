@@ -5,16 +5,21 @@ Deliverables:
   - Baseline results dataset (CSV/JSON) with latency, throughput, memory, OOM thresholds
   - Correctness harness code with stored baseline logits/token traces
   - Baseline plots showing scaling with sequence length
+
+Usage:
+  python scripts/week03_baseline.py                   # All benchmark models
+  python scripts/week03_baseline.py --model qwen2.5-3b
 """
 
 import os
 import sys
 import json
+import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import (
-    DEFAULT_MODEL_ID, BENCHMARK_CFG, CORRECTNESS_CFG,
+    MODEL_CANDIDATES, PRIMARY_BENCHMARK_MODELS, BENCHMARK_CFG, CORRECTNESS_CFG,
     RESULTS_DIR, PROMPTS_DIR,
 )
 from src.utils import setup_logging, save_results_json, save_results_csv, set_seed
@@ -28,7 +33,6 @@ from src.correctness import run_correctness_suite
 logger = setup_logging("week03")
 
 WEEK_DIR = os.path.join(RESULTS_DIR, "week03_baseline")
-os.makedirs(WEEK_DIR, exist_ok=True)
 
 
 def load_prompts():
@@ -38,9 +42,9 @@ def load_prompts():
         return json.load(f)
 
 
-def run_baseline_benchmarks(model, tokenizer):
-    """Run the full baseline benchmark suite."""
-    logger.info("Running baseline benchmark sweep...")
+def run_baseline_benchmarks(model, tokenizer, model_key, out_dir):
+    """Run the full baseline benchmark suite for a single model."""
+    logger.info(f"Running baseline benchmark sweep for {model_key}...")
 
     prompts = load_prompts()
     base_prompt = prompts["single_turn"][0]["text"]
@@ -58,7 +62,6 @@ def run_baseline_benchmarks(model, tokenizer):
         seed=BENCHMARK_CFG.seed,
     )
 
-    # Save as JSON
     results_data = [
         {
             "config_id": r.config_id,
@@ -80,19 +83,18 @@ def run_baseline_benchmarks(model, tokenizer):
 
     save_results_json(
         results_data,
-        os.path.join(WEEK_DIR, "baseline_benchmark_results.json"),
+        os.path.join(out_dir, "baseline_benchmark_results.json"),
     )
 
-    # Save as CSV
     table_rows = results_to_table(results)
-    save_results_csv(table_rows, os.path.join(WEEK_DIR, "baseline_benchmark_results.csv"))
+    save_results_csv(table_rows, os.path.join(out_dir, "baseline_benchmark_results.csv"))
 
     return results
 
 
-def run_oom_threshold_search(model, tokenizer):
+def run_oom_threshold_search(model, tokenizer, model_key, out_dir):
     """Search for OOM threshold."""
-    logger.info("Searching for OOM threshold...")
+    logger.info(f"Searching for OOM threshold ({model_key})...")
 
     prompts = load_prompts()
     base_prompt = prompts["long_context_seed"]["text"]
@@ -102,23 +104,23 @@ def run_oom_threshold_search(model, tokenizer):
         tokenizer=tokenizer,
         base_prompt=base_prompt,
         max_new_tokens=BENCHMARK_CFG.output_limit,
-        start_length=512,
-        max_length=4096,
-        step=512,
+        start_length=128,
+        max_length=8192,
+        step=256,
     )
 
     save_results_json(
         oom_result,
-        os.path.join(WEEK_DIR, "oom_threshold.json"),
+        os.path.join(out_dir, "oom_threshold.json"),
     )
 
     logger.info(f"  OOM threshold: {oom_result['oom_threshold_tokens']} tokens")
     return oom_result
 
 
-def run_baseline_correctness(model, tokenizer):
+def run_baseline_correctness(model, tokenizer, model_key, out_dir):
     """Collect baseline correctness traces."""
-    logger.info("Collecting baseline correctness traces...")
+    logger.info(f"Collecting baseline correctness traces ({model_key})...")
 
     prompts_data = load_prompts()
     correctness_prompts = [
@@ -129,13 +131,12 @@ def run_baseline_correctness(model, tokenizer):
         model=model,
         tokenizer=tokenizer,
         prompts=correctness_prompts,
-        baseline_traces=None,  # This IS the baseline
+        baseline_traces=None,
         num_steps=CORRECTNESS_CFG.num_logit_comparison_steps,
         config_id="baseline",
         seed=BENCHMARK_CFG.seed,
     )
 
-    # Save traces (without full logits to save space)
     traces_for_save = []
     for trace in result["traces"]:
         traces_for_save.append({
@@ -148,44 +149,47 @@ def run_baseline_correctness(model, tokenizer):
 
     save_results_json(
         {"config_id": "baseline", "traces_summary": traces_for_save},
-        os.path.join(WEEK_DIR, "baseline_correctness_summary.json"),
+        os.path.join(out_dir, "baseline_correctness_summary.json"),
     )
 
-    # Save full traces (with logits) for comparison in later weeks
     save_results_json(
         result,
-        os.path.join(WEEK_DIR, "baseline_correctness_full.json"),
+        os.path.join(out_dir, "baseline_correctness_full.json"),
     )
 
     return result
 
 
-def main():
-    logger.info("=" * 60)
-    logger.info("WEEK 03 — Baseline Measurement")
-    logger.info("=" * 60)
+def run_for_model(model_key: str):
+    """Run all week-03 deliverables for a single model."""
+    import torch
 
-    set_seed(BENCHMARK_CFG.seed)
+    model_info = MODEL_CANDIDATES[model_key]
+    model_id = model_info["hf_id"]
+    is_multimodal = model_info.get("multimodal", False)
 
-    # Load model
-    logger.info(f"Loading model: {DEFAULT_MODEL_ID}")
-    model, tokenizer = load_model_4bit(DEFAULT_MODEL_ID)
+    out_dir = os.path.join(WEEK_DIR, model_key)
+    os.makedirs(out_dir, exist_ok=True)
 
-    # 1. Baseline benchmarks
-    bench_results = run_baseline_benchmarks(model, tokenizer)
+    logger.info(f"Loading model: {model_id}")
 
-    # 2. OOM threshold
-    oom_result = run_oom_threshold_search(model, tokenizer)
+    if is_multimodal:
+        from src.multimodal_loader import load_multimodal_model_4bit
+        model, processor = load_multimodal_model_4bit(model_key)
+        tokenizer = getattr(processor, "tokenizer", processor)
+    else:
+        model, tokenizer = load_model_4bit(model_id)
 
-    # 3. Correctness traces
-    correctness_result = run_baseline_correctness(model, tokenizer)
+    bench_results = run_baseline_benchmarks(model, tokenizer, model_key, out_dir)
+    oom_result = run_oom_threshold_search(model, tokenizer, model_key, out_dir)
+    correctness_result = run_baseline_correctness(model, tokenizer, model_key, out_dir)
 
-    # Summary
     summary = {
         "week": "03",
         "title": "Baseline Measurement",
         "status": "COMPLETE",
-        "model": DEFAULT_MODEL_ID,
+        "model_key": model_key,
+        "model": model_id,
         "num_benchmark_configs": len(bench_results),
         "oom_threshold_tokens": oom_result.get("oom_threshold_tokens"),
         "correctness_prompts": len(correctness_result.get("traces", [])),
@@ -197,17 +201,55 @@ def main():
             "baseline_correctness_full.json",
         ],
     }
-    save_results_json(summary, os.path.join(WEEK_DIR, "week03_summary.json"))
+    save_results_json(summary, os.path.join(out_dir, "week03_summary.json"))
+
+    del model
+    if is_multimodal:
+        del processor
+    else:
+        del tokenizer
+    torch.cuda.empty_cache()
+
+    return summary
+
+
+def main(model_keys=None):
+    from src.utils import CheckpointManager
+    ckpt = CheckpointManager("week03")
+
+    logger.info("=" * 60)
+    logger.info("WEEK 03 — Baseline Measurement")
+    logger.info("=" * 60)
+
+    set_seed(BENCHMARK_CFG.seed)
+
+    if model_keys is None:
+        model_keys = list(PRIMARY_BENCHMARK_MODELS)
+
+    for model_key in model_keys:
+        if ckpt.is_done(model_key):
+            logger.info(f"[SKIP] {model_key} already done (checkpoint)")
+            continue
+        logger.info(f"\n{'#' * 50}")
+        logger.info(f"# Model: {model_key}")
+        logger.info(f"{'#' * 50}")
+        try:
+            run_for_model(model_key)
+            ckpt.mark_done(model_key)
+            logger.info(f"[CHECKPOINT] {model_key} saved")
+        except Exception as e:
+            logger.error(f"Failed for {model_key}: {e}")
+            import traceback
+            traceback.print_exc()
 
     logger.info("=" * 60)
     logger.info("Week 03 deliverables saved to: " + WEEK_DIR)
     logger.info("=" * 60)
 
-    # Clean up
-    import torch
-    del model, tokenizer
-    torch.cuda.empty_cache()
-
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, nargs="+", default=None,
+                        help="Model key(s) to benchmark (default: all)")
+    args = parser.parse_args()
+    main(model_keys=args.model)
